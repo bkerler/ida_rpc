@@ -1,0 +1,51 @@
+{
+  "$schema": "https://hcli.docs.hex-rays.com/schemas/ida-plugin.json",
+  "IDAMetadataDescriptorVersion": 1,
+  "plugin": {
+    "name": "ida-rpc",
+    "version": "0.1.0",
+    "entryPoint": "ida_rpc_plugin.py",
+    "description": "CLI-driven daemon exposing IDA Pro reverse engineering capabilities over a Unix domain socket",
+    "license": "MIT",
+    "idaVersions": [
+      "9.0",
+      "9.1",
+      "9.2",
+      "9.3"
+    ],
+    "platforms": [
+      "windows-x86_64",
+      "linux-x86_64",
+      "macos-x86_64",
+      "macos-aarch64"
+    ],
+    "categories": [
+      "api-scripting-and-automation",
+      "integration-with-third-parties-interoperability"
+    ],
+    "keywords": [
+      "ida-pro",
+      "ida",
+      "reverse-engineering",
+      "decompiler",
+      "binary-analysis",
+      "rpc",
+      "json-rpc",
+      "automation",
+      "llm",
+      "agent"
+    ],
+    "pythonDependencies": [
+      "click>=8.1.0"
+    ],
+    "urls": {
+      "repository": "https://github.com/bkerler/ida_rpc"
+    },
+    "authors": [
+      {
+        "name": "Bjoern Kerler",
+        "email": "info@revskills.de"
+      }
+    ]
+  }
+}

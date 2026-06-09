@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+
+# pytest
+.pytest_cache/
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# IDA project files (user-specific, not source)
+*.i64
+*.i*
+
+# Daemon runtime files
+*.sock
+*.log
+
+# ghidra-rpc session state (written alongside .gpr, machine-specific)
+.ida-rpc-*.json
+
+# pi conversation logs
+*.jsonl
+ida-rpc-*.tar.gz
