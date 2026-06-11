@@ -1,4 +1,7 @@
 # ida-rpc
+
+![ida-rpc plugin logo](ida-plugin.png)
+
 (c) B.Kerler 2026
 
 A JSON-RPC daemon for IDA Pro, inspired by [ghidra-rpc](https://github.com/cellebrite-labs/ghidra-rpc).

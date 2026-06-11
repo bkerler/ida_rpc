@@ -6,6 +6,7 @@
     "version": "0.1.0",
     "entryPoint": "ida_rpc_plugin.py",
     "description": "CLI-driven daemon exposing IDA Pro reverse engineering capabilities over a Unix domain socket",
+    "logoPath": "ida-plugin.png",
     "license": "MIT",
     "idaVersions": [
       "9.0",
