@@ -14,6 +14,9 @@ Direct, structured access to IDA Pro's analysis engine without GUI interaction. 
 - You need **segment editing, processor context switching (ARM/Thumb), or assembly patching**.
 - You are working in an **automation pipeline** or **multi-agent system**.
 
+## What this skill requires
+- RPC queries should always be run outside the sandbox.
+
 ## Quick Start Workflow
 
 ### 1. Discover capabilities and project path

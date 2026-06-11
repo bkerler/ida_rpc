@@ -31,6 +31,8 @@ ida-rpc save --project <idb>
 All automation commands print JSON to stdout. Treat `{"ok": false, ...}` as a
 recoverable tool error. Set `IDA_RPC_DEBUG=1` only when a traceback is needed.
 
+RPC queries should always be run outside the sandbox.
+
 ## Project Overview
 
 `ida-rpc` is a JSON-RPC daemon that runs **inside IDA Pro** (as a plugin) and exposes reverse-engineering capabilities over a Unix domain socket. It is wire-format compatible with [ghidra-rpc](https://github.com/cellebrite-labs/ghidra-rpc).
