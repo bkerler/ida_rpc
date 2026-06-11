@@ -123,11 +123,23 @@ def start_background(
     )
     if ida_dir:
         env["IDA_INSTALL_DIR"] = ida_dir
+    env.setdefault("LC_ALL", "C.UTF-8")
+    env.setdefault("LANG", "C.UTF-8")
 
     # Determine IDA executable
-    # NOTE: idat (text-mode) fails with "error code 2" when creating new DBs
-    # on IDA 9.3sp2 Linux. Use "ida" (GUI binary) with -A instead.
-    ida_exe = Path(ida_dir) / "ida" if ida_dir else Path("ida")
+    ida_root = Path(ida_dir) if ida_dir else None
+    if session.mode == "headless" and ida_root is not None:
+        idat_exe = ida_root / "idat"
+        ida_gui_exe = ida_root / "ida"
+        if session.project_idb.exists() and idat_exe.exists():
+            ida_exe = idat_exe
+        else:
+            ida_exe = ida_gui_exe
+            env.setdefault("QT_QPA_PLATFORM", "offscreen")
+    elif ida_root is not None:
+        ida_exe = ida_root / "ida"
+    else:
+        ida_exe = Path("idat" if session.mode == "headless" else "ida")
 
     if not ida_exe.exists():
         raise FileNotFoundError(
@@ -136,6 +148,8 @@ def start_background(
             f"  export IDA_INSTALL_DIR=/opt/ida-pro-9.3sp2\n"
             f"Or pass --ida-install-dir to the command."
         )
+    if ida_exe.name not in {"ida", "idat", "ida64", "idat64"}:
+        raise RuntimeError(f"Refusing to launch non-IDA executable: {ida_exe}")
 
     # Build command to launch IDA with the plugin
     cmd = [str(ida_exe)]
@@ -178,6 +192,8 @@ def start_background(
 
     # The plugin auto-starts the server when loaded
     with open(log_path, "a") as log_fh:
+        log_fh.write("ida-rpc launch command: " + " ".join(cmd) + "\n")
+        log_fh.flush()
         subprocess.Popen(
             cmd,
             stdout=log_fh,

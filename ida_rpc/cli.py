@@ -565,9 +565,36 @@ def status(project: str | None):
 
 @cli.command()
 @click.option("--project", "-p", type=str, help="Path to IDB file")
-def stop(project: str | None):
-    """Stop the daemon for a project."""
+@click.option("--all", "stop_all", is_flag=True, help="Stop all running ida-rpc daemons")
+def stop(project: str | None, stop_all: bool):
+    """Stop the daemon for a project, or all daemons with --all."""
     from ida_rpc.daemon import stop_daemon
+
+    if stop_all:
+        socks = sorted(Path("/tmp").glob("ida-rpc-*.sock"))
+        stopped = []
+        failed = []
+        not_running = []
+        for sock in socks:
+            if stop_daemon(sock):
+                stopped.append(str(sock))
+            else:
+                # Check if socket file still exists but daemon wasn't responsive
+                if sock.exists():
+                    not_running.append(str(sock))
+                else:
+                    failed.append(str(sock))
+        _json_output({
+            "ok": True,
+            "result": {
+                "status": "stopped_all",
+                "stopped": stopped,
+                "not_running": not_running,
+                "failed": failed,
+                "count": len(stopped),
+            },
+        })
+        return
 
     idb = _resolve_project(project)
     sock = session_mod.socket_path_for_project(idb)
