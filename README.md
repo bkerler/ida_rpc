@@ -27,6 +27,12 @@ integration with LLM agents, automation pipelines, and multi-agent setups.
 hcli plugin install ida-rpc
 ```
 
+**Or in the script path:**
+
+```bash 
+hcli plugin install .
+```
+
 **Or manually:**
 
 ```bash
