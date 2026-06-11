@@ -316,6 +316,85 @@ class TestBatchCommands:
         assert result.exit_code != 0
 
 
+class TestStopAll:
+    """Test stop --all enumerates and stops all daemons."""
+
+    runner = CliRunner()
+
+    def test_stop_all_finds_and_stops_sockets(self, tmp_path, monkeypatch):
+        stopped = []
+
+        def fake_stop_daemon(sock):
+            stopped.append(str(sock))
+            return True
+
+        monkeypatch.setattr("ida_rpc.daemon.stop_daemon", fake_stop_daemon)
+
+        # Create fake socket files
+        sock1 = tmp_path / "ida-rpc-aaaa.sock"
+        sock2 = tmp_path / "ida-rpc-bbbb.sock"
+        other = tmp_path / "other.sock"
+        sock1.write_text("")
+        sock2.write_text("")
+        other.write_text("")
+
+        # Patch glob to use our temp dir
+        import pathlib
+        original_glob = pathlib.Path.glob
+
+        def fake_glob(self, pattern):
+            if pattern == "ida-rpc-*.sock" and str(self) == "/tmp":
+                return sorted(
+                    p for p in tmp_path.iterdir()
+                    if p.name.startswith("ida-rpc-") and p.name.endswith(".sock")
+                )
+            return original_glob(self, pattern)
+
+        monkeypatch.setattr(pathlib.Path, "glob", fake_glob)
+
+        result = self.runner.invoke(cli, ["stop", "--all"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["result"]["status"] == "stopped_all"
+        assert len(data["result"]["stopped"]) == 2
+        assert set(stopped) == {str(sock1), str(sock2)}
+
+    def test_stop_all_reports_not_running(self, tmp_path, monkeypatch):
+        def fake_stop_daemon(sock):
+            return False
+
+        monkeypatch.setattr("ida_rpc.daemon.stop_daemon", fake_stop_daemon)
+
+        sock1 = tmp_path / "ida-rpc-aaaa.sock"
+        sock1.write_text("")
+
+        import pathlib
+        original_glob = pathlib.Path.glob
+
+        def fake_glob(self, pattern):
+            if pattern == "ida-rpc-*.sock" and str(self) == "/tmp":
+                return sorted(
+                    p for p in tmp_path.iterdir()
+                    if p.name.startswith("ida-rpc-") and p.name.endswith(".sock")
+                )
+            return original_glob(self, pattern)
+
+        monkeypatch.setattr(pathlib.Path, "glob", fake_glob)
+
+        result = self.runner.invoke(cli, ["stop", "--all"])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["result"]["not_running"] == [str(sock1)]
+        assert data["result"]["stopped"] == []
+
+    def test_stop_still_requires_project_without_all(self):
+        result = self.runner.invoke(cli, ["stop"])
+        assert result.exit_code != 0
+        assert "No project specified" in result.output
+
+
 class TestClearDataRangeArgs:
     """Test clear-data-range requires end or length."""
 

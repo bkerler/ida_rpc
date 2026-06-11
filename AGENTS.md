@@ -316,7 +316,7 @@ After adding or changing a command:
 3. Start headless daemon: `ida-rpc start --project /tmp/test.i64 --headless --detach`
 4. Run the command via CLI and verify JSON output
 5. Check `ida-rpc status --project /tmp/test.i64`
-6. Stop: `ida-rpc stop --project /tmp/test.i64`
+6. Stop: `ida-rpc stop --project /tmp/test.i64` (or `ida-rpc stop --all` to close every open project at once)
 
 ## Common Pitfalls
 
