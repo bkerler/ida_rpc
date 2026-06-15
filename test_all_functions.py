@@ -30,7 +30,7 @@ def send(cmd: str, args: dict | None = None, timeout: float = 30.0):
     return json.loads(buf.decode().strip())
 
 
-def test(name, cmd, args=None, timeout=30.0, check=None, expect_fail=False):
+def run_case(name, cmd, args=None, timeout=30.0, check=None, expect_fail=False):
     try:
         resp = send(cmd, args, timeout=timeout)
         if resp.get("ok"):
@@ -67,7 +67,7 @@ def main():
 
     # --- Basic / Analysis (read-only) ---
     print("\n=== Analysis ===")
-    if test("ping", "ping", {}, check=lambda r: r.get("status") == "alive"):
+    if run_case("ping", "ping", {}, check=lambda r: r.get("status") == "alive"):
         passed += 1
     else:
         failed += 1
@@ -81,7 +81,7 @@ def main():
         ("list_calling_conventions", "list_calling_conventions", {}),
         ("list_binaries", "list_binaries", {}),
     ]:
-        if test(name, cmd, args):
+        if run_case(name, cmd, args):
             passed += 1
         else:
             failed += 1
@@ -93,19 +93,19 @@ def main():
         ("list_segments", "list_segments", {}),
         ("read_bytes", "read_bytes", {"address": "0x0", "length": 16}),
     ]:
-        if test(name, cmd, args):
+        if run_case(name, cmd, args):
             passed += 1
         else:
             failed += 1
 
     # --- Navigation / Disassembly ---
     print("\n=== Navigation / Disassembly ===")
-    if test("goto", "goto", {"target": "0x0", "target_type": "address"}):
+    if run_case("goto", "goto", {"target": "0x0", "target_type": "address"}):
         passed += 1
     else:
         failed += 1
 
-    if test("disassemble", "disassemble", {"address": "0x0", "count": 5}):
+    if run_case("disassemble", "disassemble", {"address": "0x0", "count": 5}):
         passed += 1
     else:
         failed += 1
@@ -116,7 +116,7 @@ def main():
         ("xrefs_to", "xrefs_to", {"target": "0x0"}),
         ("xrefs_from", "xrefs_from", {"target": "0x0"}),
     ]:
-        if test(name, cmd, args):
+        if run_case(name, cmd, args):
             passed += 1
         else:
             failed += 1
@@ -128,30 +128,30 @@ def main():
         ("strings", "strings", {"limit": 5}),
         ("symbols", "symbols", {"query": "start", "limit": 5}),
     ]:
-        if test(name, cmd, args):
+        if run_case(name, cmd, args):
             passed += 1
         else:
             failed += 1
 
     # --- CFG ---
     print("\n=== CFG ===")
-    if test("basic_blocks", "basic_blocks", {"func": "start"}):
+    if run_case("basic_blocks", "basic_blocks", {"func": "start"}):
         passed += 1
     else:
         failed += 1
 
     # --- Processor ---
     print("\n=== Processor ===")
-    if test("get_processor_context", "get_processor_context", {}):
+    if run_case("get_processor_context", "get_processor_context", {}):
         passed += 1
     else:
         failed += 1
-    if test("get_processor_context reg", "get_processor_context", {"reg": "T"}):
+    if run_case("get_processor_context reg", "get_processor_context", {"reg": "T"}):
         passed += 1
     else:
         failed += 1
     # set_processor_context may fail on architectures without segment registers
-    if test("set_processor_context", "set_processor_context",
+    if run_case("set_processor_context", "set_processor_context",
             {"address": "0x20", "register": "T", "value": 0}, expect_fail=True):
         passed += 1
     else:
@@ -163,7 +163,7 @@ def main():
         ("decompile", "decompile", {"func": "start"}, 120.0),
         ("decompile_all", "decompile_all", {"limit": 2}, 120.0),
     ]:
-        if test(name, cmd, args, timeout=to):
+        if run_case(name, cmd, args, timeout=to):
             passed += 1
         else:
             failed += 1
@@ -175,7 +175,7 @@ def main():
         ("list_labels", "list_labels", {"address": "0x20"}, 60.0),
         ("list_equates", "list_equates", {}, 60.0),
     ]:
-        if test(name, cmd, args, timeout=to):
+        if run_case(name, cmd, args, timeout=to):
             passed += 1
         else:
             failed += 1
@@ -187,7 +187,7 @@ def main():
         ("list_bookmarks", "list_bookmarks", {}),
         ("remove_bookmark", "remove_bookmark", {"address": "0x20"}),
     ]:
-        if test(name, cmd, args):
+        if run_case(name, cmd, args):
             passed += 1
         else:
             failed += 1
@@ -198,7 +198,7 @@ def main():
         ("create_namespace", "create_namespace", {"namespace": "test_ns"}),
         ("list_namespaces", "list_namespaces", {}),
     ]:
-        if test(name, cmd, args):
+        if run_case(name, cmd, args):
             passed += 1
         else:
             failed += 1
@@ -211,14 +211,14 @@ def main():
         ("functions_by_tag", "functions_by_tag", {"tag": "test_tag"}),
         ("untag_function", "untag_function", {"target": "start", "tag": "test_tag"}),
     ]:
-        if test(name, cmd, args):
+        if run_case(name, cmd, args):
             passed += 1
         else:
             failed += 1
 
     # --- Assembler ---
     print("\n=== Assembler ===")
-    if test("assemble", "assemble", {"address": "0x20", "instruction": "NOP"}):
+    if run_case("assemble", "assemble", {"address": "0x20", "instruction": "NOP"}):
         passed += 1
     else:
         failed += 1
@@ -233,14 +233,14 @@ def main():
 
     # --- Save ---
     print("\n=== Save ===")
-    if test("save", "save", {}):
+    if run_case("save", "save", {}):
         passed += 1
     else:
         failed += 1
 
     # --- Stop ---
     print("\n=== Stop ===")
-    if test("stop", "stop", {}):
+    if run_case("stop", "stop", {}):
         passed += 1
     else:
         failed += 1
