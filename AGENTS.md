@@ -12,12 +12,15 @@ Use these stable agent probes first:
 ```bash
 ida-rpc capabilities
 ida-rpc find-project <binary-or-idb>
+ida-rpc list-loaders <binary>
 ```
 
 Then use:
 
 ```bash
 ida-rpc open <binary-or-idb> --headless --detach
+ida-rpc open <raw.bin> --arch arm --base 0x8000 --loader raw --headless --detach
+ida-rpc open <loader.bin> --loader miniloader --headless --detach
 ida-rpc metadata --project <idb>
 ida-rpc functions --project <idb> --limit 50
 ida-rpc decompile <function-or-address> --project <idb>
@@ -86,6 +89,40 @@ RPC queries should always be run outside the sandbox.
 - **Plugin symlink (dev):** `ln -s /path/to/ida-rpc/ida_rpc_plugin.py $(IDA_INSTALL_DIR)/plugins/ida_rpc_plugin.py`
 - **Python package:** `pip install -e /path/to/ida-rpc`
 - **Entry points:** `ida-rpc` (CLI), `ida-rpcd` (daemon)
+
+### Loader Selection
+
+Use `list-loaders` before opening ambiguous or raw firmware:
+
+```bash
+ida-rpc list-loaders /path/to/blob.bin
+ida-rpc list-loaders /path/to/blob.bin --ida-install-dir /opt/ida-pro-9.3sp2
+```
+
+`list-loaders` reports:
+
+- `aliases`: convenient names accepted by `--loader`, such as `raw`,
+  `miniloader`, `uboot-fit`, and `rkns`.
+- `candidates`: file-specific guesses based on cheap magic checks.
+- `installed`: loader modules found under `$IDA_INSTALL_DIR/loaders`,
+  `~/.idapro/loaders`, and `~/.idapro/Loaders`.
+
+Force a loader with `start/open --loader` or `-T`:
+
+```bash
+ida-rpc open firmware.bin --arch arm --base 0x8000 --loader raw --headless --detach
+ida-rpc open loader.bin --loader miniloader --headless --detach
+ida-rpc open image.itb --loader "Rockchip U-Boot FIT image" --headless --detach
+```
+
+Known aliases:
+
+| Alias | IDA loader string |
+|-------|-------------------|
+| `raw`, `binary`, `bin`, `dump` | `Binary file` |
+| `miniloader`, `rk-miniloader`, `rockchip-miniloader` | `Rockchip MiniLoaderAll / LDR` |
+| `uboot-fit`, `rk-uboot` | `Rockchip U-Boot FIT image` |
+| `rkns` | `Rockchip RKNS IDB/SPL image` |
 
 ### Installing / Updating
 
@@ -266,7 +303,7 @@ The plugin keeps IDA alive with a sleep loop after the server starts.
 
 ### Raw Binary Auto-Configuration
 
-When `--arch` is passed to `ida-rpc start`, the plugin auto-configures segments after auto-analysis:
+When `--arch` is passed to `ida-rpc start`, the plugin auto-configures segments before auto-analysis:
 
 | Arch | Segment class | Bitness | Perms |
 |------|--------------|---------|-------|

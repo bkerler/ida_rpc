@@ -24,6 +24,7 @@ Direct, structured access to IDA Pro's analysis engine without GUI interaction. 
 ```bash
 ida-rpc capabilities
 ida-rpc find-project /path/to/binary-or-existing.i64
+ida-rpc list-loaders /path/to/binary
 ```
 
 Use `capabilities` as the stable automation probe. It returns JSON describing
@@ -39,7 +40,11 @@ ida-rpc open /path/to/binary --headless --detach
 ida-rpc open --project /path/to/existing.i64 --headless --detach
 
 # For raw binaries, specify architecture and base address
-ida-rpc open /path/to/raw.bin --arch arm --base 0x8000 --headless --detach
+ida-rpc open /path/to/raw.bin --arch arm --base 0x8000 --loader raw --headless --detach
+
+# For custom loaders, first list candidates, then force the loader if needed
+ida-rpc list-loaders /path/to/loader.bin
+ida-rpc open /path/to/loader.bin --loader miniloader --headless --detach
 
 # When opening a system binary (e.g. /usr/bin/ls), specify a writable project path
 ida-rpc open /usr/bin/ls --project /tmp/ls_analysis.i64 --headless --detach
@@ -119,14 +124,24 @@ ida-rpc stop
 |---------|------|-------------|
 | `capabilities` | | Print agent-discoverable JSON command capabilities |
 | `find-project <binary-or-idb>` | | Resolve IDB path, socket path, session state, and recommended start command |
-| `open <binary-or-idb> [--project <idb>] [--headless] [--detach]` | | Agent-friendly alias for `start` |
-| `start <binary> [--project <idb>] [--arch <arch>] [--base <addr>] [--headless] [--detach] [--clean]` | | Open binary and start daemon |
+| `list-loaders [binary] [--ida-install-dir DIR]` | | List loader aliases, installed IDA loaders, and file-specific candidates |
+| `open <binary-or-idb> [--project <idb>] [--loader <name>] [--headless] [--detach]` | | Agent-friendly alias for `start` |
+| `start <binary> [--project <idb>] [--arch <arch>] [--base <addr>] [--loader <name>] [--headless] [--detach] [--clean]` | | Open binary and start daemon |
 | `start --project <idb> [--headless] [--detach] [--clean]` | | Open an existing database |
 | `stop --project <idb>` | | Stop daemon |
 | `status --project <idb>` | | Check health + list loaded binaries |
 | `restart --project <idb> [--headless] [--clean]` | | Restart daemon |
 | `list` | | List all active projects/daemons |
 | `list-binaries --project <idb>` | | List binaries loaded in the current IDB |
+
+Loader aliases accepted by `--loader` include:
+
+| Alias | IDA loader string |
+|-------|-------------------|
+| `raw`, `binary`, `bin`, `dump` | `Binary file` |
+| `miniloader`, `rk-miniloader`, `rockchip-miniloader` | `Rockchip MiniLoaderAll / LDR` |
+| `uboot-fit`, `rk-uboot` | `Rockchip U-Boot FIT image` |
+| `rkns` | `Rockchip RKNS IDB/SPL image` |
 
 ### Analysis & Listing
 

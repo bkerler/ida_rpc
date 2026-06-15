@@ -20,22 +20,23 @@ def _ida():
 def _func_flags_to_list(flags: int) -> list[str]:
     import ida_funcs
     names = []
-    mapping = {
-        ida_funcs.FUNC_NORET: "noreturn",
-        ida_funcs.FUNC_FAR: "far",
-        ida_funcs.FUNC_LIB: "library",
-        ida_funcs.FUNC_STATIC: "static",
-        ida_funcs.FUNC_FRAME: "frame",
-        ida_funcs.FUNC_USERFAR: "userfar",
-        ida_funcs.FUNC_HIDDEN: "hidden",
-        ida_funcs.FUNC_THUNK: "thunk",
-        ida_funcs.FUNC_BOTTOMBP: "bottombp",
-        ida_funcs.FUNC_NORET_PENDING: "noreturn_pending",
-        ida_funcs.FUNC_SP_READY: "sp_ready",
-        ida_funcs.FUNC_PURGED_OK: "purged_ok",
-        ida_funcs.FUNC_TAIL: "tail",
-    }
-    for bit, name in mapping.items():
+    mapping = (
+        ("FUNC_NORET", "noreturn"),
+        ("FUNC_FAR", "far"),
+        ("FUNC_LIB", "library"),
+        ("FUNC_STATIC", "static"),
+        ("FUNC_FRAME", "frame"),
+        ("FUNC_USERFAR", "userfar"),
+        ("FUNC_HIDDEN", "hidden"),
+        ("FUNC_THUNK", "thunk"),
+        ("FUNC_BOTTOMBP", "bottombp"),
+        ("FUNC_NORET_PENDING", "noreturn_pending"),
+        ("FUNC_SP_READY", "sp_ready"),
+        ("FUNC_PURGED_OK", "purged_ok"),
+        ("FUNC_TAIL", "tail"),
+    )
+    for attr, name in mapping:
+        bit = getattr(ida_funcs, attr, 0)
         if flags & bit:
             names.append(name)
     return names

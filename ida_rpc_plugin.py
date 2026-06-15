@@ -56,11 +56,23 @@ _plugin_instance = None
 
 def _configure_segments_for_arch(arch: str) -> None:
     """Auto-configure segments for raw binaries based on the requested arch."""
+    import ida_ida
+    import ida_idp
+    import idaapi
     import ida_segment
     import idautils
     import idc
 
     arch_lower = arch.lower().strip()
+
+    if arch_lower in {"aarch64", "arm64"}:
+        ida_idp.set_processor_type("arm", ida_idp.SETPROC_LOADER_NON_FATAL)
+        if idaapi.IDA_SDK_VERSION >= 900:
+            ida_ida.inf_set_32bit(False)
+            ida_ida.inf_set_64bit(True)
+            ida_ida.inf_set_app_bitness(64)
+        else:
+            idaapi.get_inf_structure().lflags |= idaapi.LFLG_64BIT
 
     # Map architecture to (segment_class, bitness)
     # bitness: 0=16-bit, 1=32-bit, 2=64-bit addresses
@@ -92,6 +104,12 @@ def _configure_segments_for_arch(arch: str) -> None:
 
         # Set bitness (address size)
         ida_segment.set_segm_addressing(seg, bitness)
+
+        if arch_lower in {"aarch64", "arm64"}:
+            try:
+                ida_segment.set_default_sreg_value(seg, "T", 0)
+            except Exception:
+                pass
 
         # Set read + execute permissions for code segments
         perm = ida_segment.SEGPERM_READ | ida_segment.SEGPERM_EXEC
@@ -152,12 +170,12 @@ class IdaRpcPlugin(ida_idaapi.plugin_t):
         )
         save(self.session)
 
-        # Wait for auto-analysis (must be on main thread)
-        ida_auto.auto_wait()
-
         # Auto-configure segments for raw binaries when arch was specified
         if arch:
             _configure_segments_for_arch(arch)
+
+        # Wait for auto-analysis after raw import mode/bitness is corrected.
+        ida_auto.auto_wait()
 
         ctx = IdaContext(self.session)
 

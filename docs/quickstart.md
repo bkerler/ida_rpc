@@ -14,7 +14,7 @@ ida-rpc start /path/to/binary --headless
 ida-rpc start /path/to/binary
 
 # For raw binaries, specify architecture and base address
-ida-rpc start /path/to/raw.bin --arch arm --base 0x8000 --headless
+ida-rpc start /path/to/raw.bin --arch arm --base 0x8000 --loader raw --headless
 ```
 
 For automation, start in the background (returns once the socket is responsive):
@@ -27,6 +27,28 @@ override the IDB path with `--project`:
 ```bash
 ida-rpc start /path/to/binary --project /custom/path.i64 --headless --detach
 ```
+
+When the file type is ambiguous, list available loaders and candidates first:
+
+```bash
+ida-rpc list-loaders /path/to/binary
+
+# Force a loader by alias
+ida-rpc start /path/to/raw.bin --arch arm --base 0x8000 --loader raw --headless --detach
+ida-rpc start /path/to/miniloader.bin --loader miniloader --headless --detach
+
+# Or force the exact IDA loader string
+ida-rpc start /path/to/image.itb --loader "Rockchip U-Boot FIT image" --headless --detach
+```
+
+Common loader aliases:
+
+| Alias | IDA loader string |
+|-------|-------------------|
+| `raw`, `binary`, `bin`, `dump` | `Binary file` |
+| `miniloader`, `rk-miniloader`, `rockchip-miniloader` | `Rockchip MiniLoaderAll / LDR` |
+| `uboot-fit`, `rk-uboot` | `Rockchip U-Boot FIT image` |
+| `rkns` | `Rockchip RKNS IDB/SPL image` |
 
 ## 2. Set the Default Project
 

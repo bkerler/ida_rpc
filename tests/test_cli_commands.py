@@ -18,6 +18,7 @@ class TestCliCommandsExist:
     @pytest.mark.parametrize("cmd", [
         "capabilities", "find-project", "open",
         "start", "restart", "list", "status", "stop",
+        "list-loaders",
         "function", "functions", "imports", "exports", "metadata",
         "relocations", "calling-conventions",
         "strings", "symbols", "find-bytes", "find-string",
@@ -88,6 +89,50 @@ class TestCliStartArgs:
         # Should fail because binary doesn't exist (click.Path validates it)
         assert result.exit_code != 0
 
+    def test_start_converts_raw_base_address_to_ida_paragraphs(self, tmp_path, monkeypatch):
+        binary = tmp_path / "sample.bin"
+        binary.write_bytes(b"\x00" * 4)
+        project = tmp_path / "sample.i64"
+        captured = {}
+
+        def fake_start_background(session, timeout, *, binary_path=None, extra_ida_args=None):
+            captured["session"] = session
+            captured["timeout"] = timeout
+            captured["binary_path"] = binary_path
+            captured["extra_ida_args"] = extra_ida_args
+
+        monkeypatch.setattr("ida_rpc.daemon.start_background", fake_start_background)
+
+        result = self.runner.invoke(cli, [
+            "start", str(binary), "--project", str(project),
+            "--arch", "aarch64", "--base", "0x03000000",
+            "--headless", "--detach",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert captured["binary_path"] == binary
+        assert captured["extra_ida_args"] == ["-parm", "-b300000"]
+
+    def test_start_passes_loader_option_to_ida(self, tmp_path, monkeypatch):
+        binary = tmp_path / "sample.bin"
+        binary.write_bytes(b"\x00" * 4)
+        project = tmp_path / "sample.i64"
+        captured = {}
+
+        def fake_start_background(session, timeout, *, binary_path=None, extra_ida_args=None):
+            captured["extra_ida_args"] = extra_ida_args
+
+        monkeypatch.setattr("ida_rpc.daemon.start_background", fake_start_background)
+
+        result = self.runner.invoke(cli, [
+            "start", str(binary), "--project", str(project),
+            "--arch", "aarch64", "--base", "0x03000000",
+            "--loader", "raw", "--headless", "--detach",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert captured["extra_ida_args"] == ["-parm", "-b300000", "-TBinary file"]
+
 
 class TestCliAgentDiscovery:
     """Test commands intended for automated agent discovery."""
@@ -112,6 +157,20 @@ class TestCliAgentDiscovery:
         assert data["ok"] is True
         assert data["result"]["project"] == str(binary.with_suffix(".i64"))
         assert data["result"]["exists"] is False
+
+    def test_list_loaders_for_rockchip_miniloader(self, tmp_path):
+        binary = tmp_path / "loader.bin"
+        binary.write_bytes((0x544F4F42).to_bytes(4, "little") + b"\x00" * 128)
+
+        result = self.runner.invoke(cli, ["list-loaders", str(binary)])
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert any(item["alias"] == "raw" for item in data["result"]["aliases"])
+        assert any(
+            item.get("alias") == "miniloader"
+            for item in data["result"]["candidates"]
+        )
 
 
 class TestCliRpcCommands:

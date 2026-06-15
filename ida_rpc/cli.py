@@ -65,6 +65,7 @@ CORE_CAPABILITIES = {
             "restart",
             "stop",
             "save",
+            "list-loaders",
         ],
         "analysis": [
             "functions",
@@ -131,6 +132,25 @@ CORE_CAPABILITIES = {
 }
 
 
+LOADER_ALIASES = {
+    "raw": "Binary file",
+    "binary": "Binary file",
+    "bin": "Binary file",
+    "dump": "Binary file",
+    "miniloader": "Rockchip MiniLoaderAll / LDR",
+    "rk-miniloader": "Rockchip MiniLoaderAll / LDR",
+    "rockchip-miniloader": "Rockchip MiniLoaderAll / LDR",
+    "uboot-fit": "Rockchip U-Boot FIT image",
+    "rk-uboot": "Rockchip U-Boot FIT image",
+    "rkns": "Rockchip RKNS IDB/SPL image",
+}
+
+IDA_PROCESSOR_ALIASES = {
+    "aarch64": "arm",
+    "arm64": "arm",
+}
+
+
 def _resolve_project(project: str | None) -> Path:
     if project:
         return Path(project).resolve()
@@ -152,6 +172,94 @@ def _json_output(data: dict) -> None:
 def _json_error(error: str, message: str) -> None:
     click.echo(json.dumps({"ok": False, "error": error, "message": message}))
     sys.exit(1)
+
+
+def _resolve_loader_name(loader: str | None) -> str | None:
+    if not loader:
+        return None
+    return LOADER_ALIASES.get(loader.strip().lower(), loader)
+
+
+def _resolve_processor_name(arch: str | None) -> str | None:
+    if not arch:
+        return None
+    normalized = arch.strip().lower()
+    return IDA_PROCESSOR_ALIASES.get(normalized, arch)
+
+
+def _ida_install_dir(explicit: str | None = None) -> Path | None:
+    if explicit:
+        return Path(explicit)
+    if os.environ.get("IDA_INSTALL_DIR"):
+        return Path(os.environ["IDA_INSTALL_DIR"])
+    return None
+
+
+def _loader_dirs(ida_install_dir: str | None = None) -> list[Path]:
+    dirs: list[Path] = []
+    ida_dir = _ida_install_dir(ida_install_dir)
+    if ida_dir:
+        dirs.append(ida_dir / "loaders")
+    for path in (
+        Path.home() / ".idapro" / "loaders",
+        Path.home() / ".idapro" / "Loaders",
+    ):
+        dirs.append(path)
+    out: list[Path] = []
+    seen: set[Path] = set()
+    for path in dirs:
+        resolved = path.expanduser()
+        if resolved not in seen and resolved.exists():
+            seen.add(resolved)
+            out.append(resolved)
+    return out
+
+
+def _installed_loaders(ida_install_dir: str | None = None) -> list[dict]:
+    loaders: list[dict] = []
+    for directory in _loader_dirs(ida_install_dir):
+        for path in sorted(directory.iterdir()):
+            if path.suffix.lower() not in {".so", ".dll", ".dylib", ".py"}:
+                continue
+            loaders.append({
+                "module": path.name,
+                "stem": path.stem,
+                "path": str(path),
+                "source": "user" if ".idapro" in path.parts else "ida",
+                "python": path.suffix.lower() == ".py",
+            })
+    return loaders
+
+
+def _u32le(data: bytes, offset: int) -> int:
+    import struct
+    return struct.unpack_from("<I", data, offset)[0]
+
+
+def _detect_loader_candidates(binary: Path | None) -> list[dict]:
+    if binary is None or not binary.exists():
+        return []
+    candidates = [{"loader": "Binary file", "alias": "raw", "reason": "raw fallback"}]
+    data = binary.read_bytes()[:0x20000]
+    if data.startswith(b"\x7fELF"):
+        candidates.append({"loader": "ELF", "module": "elf", "reason": "ELF magic"})
+    if data.startswith(b"MZ"):
+        candidates.append({"loader": "Portable executable", "module": "pe", "reason": "MZ header"})
+    if len(data) >= 4 and _u32le(data, 0) in {0x544F4F42, 0x2052444C}:
+        candidates.append({
+            "loader": "Rockchip MiniLoaderAll / LDR",
+            "alias": "miniloader",
+            "module": "rk_miniloader",
+            "reason": "Rockchip BOOT/LDR tag",
+        })
+    if b"\xd0\r\xfe\xed" in data[:0x2000]:
+        candidates.append({
+            "loader": "Rockchip U-Boot FIT image",
+            "alias": "uboot-fit",
+            "module": "rk_uboot_loader",
+            "reason": "FIT/FDT magic",
+        })
+    return candidates
 
 
 def _rpc_command(project: Path, cmd: str, args: dict) -> None:
@@ -243,11 +351,37 @@ def find_project(path: str):
     })
 
 
+@cli.command(name="list-loaders")
+@click.argument("binary", required=False, default="")
+@click.option("--ida-install-dir", "ida_install_dir", type=str, default=None)
+def list_loaders(binary: str, ida_install_dir: str | None):
+    """List available IDA loaders and aliases, optionally with candidates for a binary."""
+    binary_path = Path(binary).resolve() if binary else None
+    if binary_path is not None and not binary_path.exists():
+        _json_error("FileNotFound", f"Binary not found: {binary}")
+    aliases = [
+        {"alias": alias, "loader": loader}
+        for alias, loader in sorted(LOADER_ALIASES.items())
+    ]
+    _json_output({
+        "ok": True,
+        "result": {
+            "binary": str(binary_path) if binary_path else None,
+            "ida_install_dir": str(_ida_install_dir(ida_install_dir)) if _ida_install_dir(ida_install_dir) else None,
+            "loader_dirs": [str(path) for path in _loader_dirs(ida_install_dir)],
+            "aliases": aliases,
+            "candidates": _detect_loader_candidates(binary_path),
+            "installed": _installed_loaders(ida_install_dir),
+        },
+    })
+
+
 @cli.command()
 @click.argument("binary", required=False, default="")
 @click.option("--project", "-p", type=str, help="IDB path to create/use (default: <binary>.i64)")
 @click.option("--arch", "-a", type=str, help="Processor type (e.g., arm, aarch64, x86, mips, ppc)")
 @click.option("--base", "-b", type=HEX_INT, help="Image base address for raw binaries")
+@click.option("--loader", "-T", type=str, help="IDA loader/file type to force (for example: raw, 'Binary file', miniloader)")
 @click.option("--headless", is_flag=True, help="Start in headless mode (no GUI)")
 @click.option("--detach", is_flag=True, help="Start in background")
 @click.option("--timeout", "-t", type=float, default=None)
@@ -258,6 +392,7 @@ def start(
     project: str | None,
     arch: str | None,
     base: int | None,
+    loader: str | None,
     headless: bool,
     detach: bool,
     timeout: float | None,
@@ -307,12 +442,15 @@ def start(
 
     # Pass arch/base through to the background launcher
     extra_ida_args = []
-    if arch:
-        extra_ida_args.append(f"-p{arch}")
+    processor_name = _resolve_processor_name(arch)
+    if processor_name:
+        extra_ida_args.append(f"-p{processor_name}")
     if base is not None:
-        # IDA's -b flag expects paragraphs (16-byte units), not bytes.
         para = base // 16
         extra_ida_args.append(f"-b{para:x}")
+    loader_name = _resolve_loader_name(loader)
+    if loader_name:
+        extra_ida_args.append(f"-T{loader_name}")
 
     from ida_rpc.daemon import has_stale_companions, clean_companion_files
 
@@ -367,6 +505,7 @@ def start(
 @click.option("--project", "-p", type=str, help="IDB path to create/use (default: <binary>.i64)")
 @click.option("--arch", "-a", type=str, help="Processor type (e.g., arm, aarch64, x86, mips, ppc)")
 @click.option("--base", "-b", type=HEX_INT, help="Image base address for raw binaries")
+@click.option("--loader", "-T", type=str, help="IDA loader/file type to force (for example: raw, 'Binary file', miniloader)")
 @click.option("--headless", is_flag=True, help="Start in headless mode (no GUI)")
 @click.option("--detach", is_flag=True, help="Start in background")
 @click.option("--timeout", "-t", type=float, default=None)
@@ -377,6 +516,7 @@ def open_project(
     project: str | None,
     arch: str | None,
     base: int | None,
+    loader: str | None,
     headless: bool,
     detach: bool,
     timeout: float | None,
@@ -389,6 +529,7 @@ def open_project(
         project,
         arch,
         base,
+        loader,
         headless,
         detach,
         timeout,

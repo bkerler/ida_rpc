@@ -64,6 +64,54 @@ Or manually remove the stale files:
 rm /path/to/binary.id0 /path/to/binary.id1 /path/to/binary.id2 /path/to/binary.nam /path/to/binary.til
 ```
 
+## Raw Binary Import Times Out
+
+**Symptom**: `ida-rpc start raw.bin --arch ... --base ... --headless --detach`
+times out, and the log only shows the IDA launch command with no Python traceback.
+
+**Cause**: IDA may be waiting for loader selection, or the wrong loader was forced.
+
+**Fix**: List loaders and force one explicitly:
+
+```bash
+ida-rpc list-loaders raw.bin
+ida-rpc start raw.bin --arch arm --base 0x8000 --loader raw --headless --detach --clean
+```
+
+For custom loaders, use the alias or exact IDA loader string:
+
+```bash
+ida-rpc start loader.bin --loader miniloader --headless --detach --clean
+ida-rpc start image.itb --loader "Rockchip U-Boot FIT image" --headless --detach --clean
+```
+
+`--base` is a byte address in the ida-rpc CLI. For example, `--base 0x03000000`
+is converted to IDA's paragraph form `-b300000` internally.
+
+For AArch64 raw binaries, use `--arch aarch64` or `--arch arm64`; ida-rpc passes
+IDA's internal ARM processor module (`-parm`) and configures the database as
+64-bit before auto-analysis.
+
+## Loader Not Listed
+
+**Symptom**: `ida-rpc list-loaders` does not show a custom loader.
+
+**Cause**: The loader is not in a directory scanned by ida-rpc.
+
+**Fix**: Place Python loaders under one of:
+
+```bash
+$IDA_INSTALL_DIR/loaders
+~/.idapro/loaders
+~/.idapro/Loaders
+```
+
+Then rerun:
+
+```bash
+ida-rpc list-loaders /path/to/binary --ida-install-dir /path/to/ida
+```
+
 ## GUI Restart Reports Timeout (or `ok: true` With Warning)
 
 **Symptom**: `ida-rpc restart` in GUI mode returns a response with a `warning` field

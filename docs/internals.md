@@ -26,7 +26,8 @@ cron/systemd/nohup contexts that strip non-standard env vars.
 `start_background()` in `daemon.py`:
 1. Saves the session file.
 2. Spawns `idat -A <idb>` (headless) or `ida <idb>` (GUI) with `start_new_session=True`
-   so the child survives the parent's exit.
+   so the child survives the parent's exit. New raw imports pass `-o<idb>` and
+   any requested loader/processor arguments before the input binary.
 3. Polls the socket (0.5 s interval) until it's responsive or the timeout expires.
 4. On timeout the error message includes the log file path.
 
@@ -35,10 +36,35 @@ Log file: `/tmp/ida-rpc-<hash>.log` (same stem as the socket). On timeout:
 tail -50 /tmp/ida-rpc-*.log
 ```
 
+## Loader Discovery and Selection
+
+`list-loaders` is a local CLI command and does not require a running daemon. It
+combines three data sources:
+
+1. Loader aliases defined in `ida_rpc.cli.LOADER_ALIASES`.
+2. Installed loader modules from `$IDA_INSTALL_DIR/loaders`, `~/.idapro/loaders`,
+   and `~/.idapro/Loaders`.
+3. Cheap file-specific candidates from `_detect_loader_candidates()`.
+
+`start/open --loader` accepts either an alias or the exact IDA loader string.
+Aliases are resolved before command construction and passed to IDA as `-T<loader>`.
+If no explicit loader is provided and a new raw import includes `--arch`,
+`daemon.start_background()` adds `-TBinary file` to avoid IDA waiting for loader
+selection.
+
+`--base` is a byte address in the ida-rpc CLI. `cli.start()` converts it to
+IDA's `-b` paragraph units before spawning IDA.
+
+IDA's AArch64 processor lives in the ARM processor module. The CLI preserves the
+session architecture as `aarch64` / `arm64`, but passes `-parm` to IDA and lets
+the plugin set 64-bit ARM database flags before analysis.
+
 ## Analysis Control
 
-In IDA, auto-analysis runs automatically when a binary is opened. The plugin waits
-for analysis to complete (`ida_auto.auto_wait()`) before starting the RPC server.
+In IDA, auto-analysis runs automatically when a binary is opened. When a saved
+session has an architecture, the plugin first applies raw-binary segment class,
+bitness, and ARM64 database flags, then waits for analysis to complete
+(`ida_auto.auto_wait()`) before starting the RPC server.
 
 The `load` RPC response always includes `"analysis_complete": bool`.
 
@@ -100,6 +126,11 @@ The `assemble` command requires **Keystone Engine** (`pip install keystone-engin
 It is an optional dependency. If Keystone is not installed, the command returns a
 clear error message.
 
+### 13. Tooling bugs during RE
+When an ida-rpc bug blocks an analysis task, fix ida-rpc first, add a regression
+test, reinstall the package when the installed CLI is used, then resume analysis.
+This keeps target-specific RE work from accumulating local workarounds.
+
 ## IDA API Quick Reference
 
 | Module | Contents |
@@ -139,6 +170,7 @@ Commands that map closely to Ghidra:
 - Cross-references (`xrefs_to`, `xrefs_from`)
 
 IDA-specific additions (no Ghidra equivalent):
+- `list-loaders` / `--loader` — loader discovery and forced IDA loader selection
 - `relocations` — IDA fixup table
 - `calling_conventions` / `list_calling_conventions` — processor-specific conventions
 - `get_processor_context` / `set_processor_context` — segment register control
