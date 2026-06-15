@@ -36,7 +36,7 @@ def _format_hexdump(start_addr: int, data: bytes, width: int = 16) -> str:
 
 
 def _handle_read_bytes(ctx, args: dict) -> dict:
-    ida_bytes, _, _, ida_idaapi, _ = _ida()
+    ida_bytes, _, _, ida_idaapi, _, _ = _ida()
 
     _ = args.get("binary", "")
     address_str = args.get("address", "")
@@ -68,7 +68,7 @@ def _handle_read_bytes(ctx, args: dict) -> dict:
 
 
 def _handle_write_bytes(ctx, args: dict) -> dict:
-    ida_bytes, _, _, ida_idaapi, _ = _ida()
+    ida_bytes, _, _, ida_idaapi, _, _ = _ida()
 
     _ = args.get("binary", "")
     address_str = args.get("address", "")
