@@ -107,7 +107,7 @@ def _handle_find_bytes(ctx, args: dict) -> dict:
 
 
 def _handle_strings(ctx, args: dict) -> dict:
-    _, _, _, idautils, _ = _ida()
+    import idautils
     import ida_nalt
 
     _ = args.get("binary", "")
@@ -133,44 +133,30 @@ def _handle_strings(ctx, args: dict) -> dict:
 
 
 def _handle_find_string(ctx, args: dict) -> dict:
-    ida_bytes, _, ida_idaapi, _, _ = _ida()
-    import ida_ida
-    import ida_nalt
-
-    _ = args.get("binary", "")
     query = args.get("query", "")
-    limit = int(args.get("limit", 100))
-    start_str = args.get("address", "")
-
     if not query:
         raise ValueError("Missing required argument: query")
-
+    start_str = args.get("address", "")
     if start_str:
         start = ctx.resolve_address(start_str)
     else:
-        start = ida_ida.inf_get_min_ea()
+        start = 0
 
+    search_args = dict(args)
+    if start_str:
+        search_args["limit"] = max(int(args.get("limit", 100)), 10000)
+    result = _handle_strings(ctx, search_args)
     matches = []
-    ea = start
-    while ea != ida_idaapi.BADADDR and len(matches) < limit:
-        # find_string searches for the next string literal
-        ea = ida_bytes.find_string(ea, ida_idaapi.BADADDR, query, 0, ida_nalt.STRTYPE_C)
-        if ea == ida_idaapi.BADADDR:
+    for item in result["strings"]:
+        if len(matches) >= int(args.get("limit", 100)):
             break
-        # Read string contents
-        contents = ida_bytes.get_strlit_contents(ea, -1, ida_nalt.STRTYPE_C)
-        text = ""
-        if contents:
-            raw = bytes(contents)
-            try:
-                text = raw.decode("utf-8")
-            except UnicodeDecodeError:
-                text = raw.decode("latin-1")
+        ea = int(item["address"], 0)
+        if ea < start:
+            continue
         matches.append({
-            "address": f"0x{ea:x}",
-            "text": text,
+            "address": item["address"],
+            "text": item["value"],
         })
-        ea = ea + 1
 
     return {
         "query": query,

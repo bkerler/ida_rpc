@@ -89,7 +89,7 @@ class TestCliStartArgs:
         # Should fail because binary doesn't exist (click.Path validates it)
         assert result.exit_code != 0
 
-    def test_start_converts_raw_base_address_to_ida_paragraphs(self, tmp_path, monkeypatch):
+    def test_start_passes_raw_base_address_to_ida(self, tmp_path, monkeypatch):
         binary = tmp_path / "sample.bin"
         binary.write_bytes(b"\x00" * 4)
         project = tmp_path / "sample.i64"
@@ -111,7 +111,7 @@ class TestCliStartArgs:
 
         assert result.exit_code == 0, result.output
         assert captured["binary_path"] == binary
-        assert captured["extra_ida_args"] == ["-parm", "-b300000"]
+        assert captured["extra_ida_args"] == ["-parm", "-b3000000"]
 
     def test_start_passes_loader_option_to_ida(self, tmp_path, monkeypatch):
         binary = tmp_path / "sample.bin"
@@ -131,7 +131,35 @@ class TestCliStartArgs:
         ])
 
         assert result.exit_code == 0, result.output
-        assert captured["extra_ida_args"] == ["-parm", "-b300000", "-TBinary file"]
+        assert captured["extra_ida_args"] == ["-parm", "-b3000000", "-TBinary file"]
+
+    def test_start_without_detach_launches_ida_for_binary(self, tmp_path, monkeypatch):
+        binary = tmp_path / "sample.bin"
+        binary.write_bytes(b"\x00" * 4)
+        project = tmp_path / "sample.i64"
+        captured = {}
+
+        def fake_start_background(session, timeout, *, binary_path=None, extra_ida_args=None):
+            captured["session"] = session
+            captured["timeout"] = timeout
+            captured["binary_path"] = binary_path
+            captured["extra_ida_args"] = extra_ida_args
+
+        def fake_start_blocking(session):
+            raise AssertionError("binary startup must launch IDA, not run a local non-IDA server")
+
+        monkeypatch.setattr("ida_rpc.daemon.start_background", fake_start_background)
+        monkeypatch.setattr("ida_rpc.daemon.start_blocking", fake_start_blocking)
+
+        result = self.runner.invoke(cli, [
+            "start", str(binary), "--project", str(project),
+            "--arch", "aarch64", "--base", "0x03000000",
+            "--headless",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert captured["binary_path"] == binary
+        assert captured["extra_ida_args"] == ["-parm", "-b3000000"]
 
 
 class TestCliAgentDiscovery:

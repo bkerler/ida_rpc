@@ -133,7 +133,8 @@ def _handle_function(ctx, args: dict) -> dict:
 
 
 def _handle_functions(ctx, args: dict) -> dict:
-    _, _, ida_funcs, ida_name, _, _, idautils, _, _, _, _, _ = _ida()
+    import ida_funcs
+    import idautils
 
     offset = int(args.get("offset", 0))
     limit = args.get("limit", None)

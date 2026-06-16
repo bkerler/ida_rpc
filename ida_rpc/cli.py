@@ -446,8 +446,7 @@ def start(
     if processor_name:
         extra_ida_args.append(f"-p{processor_name}")
     if base is not None:
-        para = base // 16
-        extra_ida_args.append(f"-b{para:x}")
+        extra_ida_args.append(f"-b{base:x}")
     loader_name = _resolve_loader_name(loader)
     if loader_name:
         extra_ida_args.append(f"-T{loader_name}")
@@ -497,7 +496,25 @@ def start(
             click.echo(f"  Binary: {binary_path}", err=True)
         click.echo(f"  Project: {idb_path}", err=True)
         click.echo(f"  Socket:  {sock}", err=True)
-        start_blocking(session)
+        if binary_path:
+            effective_timeout = timeout if timeout is not None else (60.0 if mode == "headless" else 180.0)
+            start_background(
+                session,
+                timeout=effective_timeout,
+                binary_path=binary_path if (binary_path and not idb_path.exists()) else None,
+                extra_ida_args=extra_ida_args,
+            )
+            _json_output({
+                "ok": True,
+                "result": {
+                    "status": "started",
+                    "mode": mode,
+                    "project": str(idb_path),
+                    "socket": str(sock),
+                },
+            })
+        else:
+            start_blocking(session)
 
 
 @cli.command(name="open")
