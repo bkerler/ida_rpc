@@ -8,6 +8,7 @@ import os
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -37,7 +38,7 @@ from ida_rpc.client import DaemonError, DaemonNotRunning
 
 CORE_CAPABILITIES = {
     "purpose": "IDA Pro reverse-engineering RPC over a local Unix socket",
-    "output": "Every automation command prints one JSON object to stdout.",
+    "output": "Automation commands print human-readable text to stdout by default. Use --json for JSON output or set IDA_RPC_JSON=1.",
     "project_option": "--project <idb>; falls back to IDA_RPC_PROJECT",
     "agent_workflow": [
         "capabilities",
@@ -157,21 +158,127 @@ def _resolve_project(project: str | None) -> Path:
     env = os.environ.get("IDA_RPC_PROJECT")
     if env:
         return Path(env).resolve()
-    click.echo(json.dumps({
-        "ok": False,
-        "error": "MissingProject",
-        "message": "No project specified. Use --project or set IDA_RPC_PROJECT.",
-    }))
-    sys.exit(1)
+    _error("MissingProject", "No project specified. Use --project or set IDA_RPC_PROJECT.")
 
 
-def _json_output(data: dict) -> None:
+def _emit_output(data: dict) -> None:
     click.echo(json.dumps(data, indent=2))
 
 
-def _json_error(error: str, message: str) -> None:
+def _human_output(data: dict) -> None:
+    if not data.get("ok", True):
+        click.echo(f"Error: {data.get('error', 'Unknown')}: {data.get('message', '')}", err=True)
+        return
+    result = data.get("result", data)
+    _format_object(result)
+
+
+def _format_object(obj: Any, indent: int = 0) -> None:
+    prefix = "  " * indent
+
+    if isinstance(obj, str):
+        click.echo(obj)
+    elif isinstance(obj, list):
+        if not obj:
+            click.echo(f"{prefix}(empty)")
+            return
+        if all(isinstance(x, dict) for x in obj):
+            text_keys = ("c_code", "listing", "hexdump", "content", "code")
+            if any(any(k in x for k in text_keys) for x in obj):
+                for i, item in enumerate(obj):
+                    if i > 0:
+                        click.echo()
+                    header = item.get("name") or item.get("address") or f"item {i}"
+                    click.echo(f"{prefix}[{header}]")
+                    _format_object(item, indent + 1)
+            else:
+                _format_table(obj, indent)
+        else:
+            for item in obj:
+                click.echo(f"{prefix}- {item}")
+    elif isinstance(obj, dict):
+        for key in ("listing", "hexdump", "c_code", "content", "code"):
+            if key in obj and isinstance(obj[key], str):
+                click.echo(obj[key])
+                return
+
+        _META_KEYS = {"count", "total", "offset", "limit", "truncated", "error_count"}
+        list_keys = [k for k, v in obj.items() if isinstance(v, list)]
+        if len(list_keys) == 1:
+            key = list_keys[0]
+            items = obj[key]
+            meta = {k: v for k, v in obj.items() if k != key and k not in ("ok",)}
+            if all(not isinstance(v, (dict, list)) for v in meta.values()) and set(meta.keys()).issubset(_META_KEYS):
+                if meta:
+                    meta_str = ", ".join(f"{k}={v}" for k, v in meta.items())
+                    click.echo(f"{prefix}{key} ({len(items)} items, {meta_str}):")
+                else:
+                    click.echo(f"{prefix}{key} ({len(items)} items):")
+                _format_object(items, indent + 1)
+                return
+
+        for k, v in obj.items():
+            if isinstance(v, (dict, list)):
+                click.echo(f"{prefix}{k}:")
+                _format_object(v, indent + 1)
+            else:
+                click.echo(f"{prefix}{k}: {v}")
+    else:
+        click.echo(f"{prefix}{obj}")
+
+
+def _cell_str(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return ", ".join(str(x) for x in value)
+    if isinstance(value, dict):
+        return str(value)
+    return str(value)
+
+
+def _format_table(rows: list[dict], indent: int = 0) -> None:
+    if not rows:
+        return
+    prefix = "  " * indent
+    keys = list(dict.fromkeys(k for row in rows for k in row.keys()))
+    widths: dict[str, int] = {k: len(k) for k in keys}
+    for row in rows:
+        for k in keys:
+            widths[k] = max(widths[k], len(_cell_str(row.get(k))))
+
+    header = "  ".join(k.ljust(widths[k]) for k in keys)
+    click.echo(f"{prefix}{header}")
+    click.echo(f"{prefix}{'-' * len(header)}")
+    for row in rows:
+        line = "  ".join(_cell_str(row.get(k)).ljust(widths[k]) for k in keys)
+        click.echo(f"{prefix}{line}")
+
+
+def _output(data: dict) -> None:
+    ctx = click.get_current_context(silent=True)
+    if ctx is not None and isinstance(ctx.obj, dict) and ctx.obj.get("json_output"):
+        _emit_output(data)
+    else:
+        _human_output(data)
+
+
+def _emit_error(error: str, message: str) -> None:
     click.echo(json.dumps({"ok": False, "error": error, "message": message}))
     sys.exit(1)
+
+
+def _human_error(error: str, message: str) -> None:
+    click.echo(f"Error: {error}: {message}", err=True)
+    sys.exit(1)
+
+
+def _error(error: str, message: str) -> None:
+    ctx = click.get_current_context(silent=True)
+    if ctx is not None and isinstance(ctx.obj, dict) and ctx.obj.get("json_output"):
+        _emit_error(error, message)
+    else:
+        _human_error(error, message)
 
 
 def _resolve_loader_name(loader: str | None) -> str | None:
@@ -266,16 +373,16 @@ def _rpc_command(project: Path, cmd: str, args: dict) -> None:
     from ida_rpc.client import send_request_with_auto_restart
     try:
         resp = send_request_with_auto_restart(project, cmd, args)
-        _json_output(resp)
+        _output(resp)
     except DaemonNotRunning as e:
-        _json_error("DaemonNotRunning", str(e))
+        _error("DaemonNotRunning", str(e))
     except DaemonError as e:
-        _json_output(e.full_response)
+        _output(e.full_response)
         sys.exit(1)
     except Exception as e:
         if os.environ.get("IDA_RPC_DEBUG"):
             traceback.print_exc(file=sys.stderr)
-        _json_error(type(e).__name__, str(e))
+        _error(type(e).__name__, str(e))
 
 
 def _default_project_for_binary(binary: Path) -> Path:
@@ -307,15 +414,23 @@ def _resolve_existing_or_default_project(path: Path) -> tuple[Path, bool]:
 
 @click.group()
 @click.version_option(__version__, prog_name="ida-rpc")
-def cli():
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Output JSON instead of human-readable text (also set via IDA_RPC_JSON=1).",
+)
+@click.pass_context
+def cli(ctx, json_output):
     """ida-rpc: CLI for the IDA Pro RPC daemon."""
-    pass
+    ctx.ensure_object(dict)
+    ctx.obj["json_output"] = json_output or os.environ.get("IDA_RPC_JSON") in ("1", "true", "yes")
 
 
 @cli.command(name="capabilities")
 def capabilities():
     """Print agent-discoverable command capabilities."""
-    _json_output({
+    _output({
         "ok": True,
         "result": {
             "version": __version__,
@@ -331,7 +446,7 @@ def find_project(path: str):
     target = Path(path).resolve() if path else _resolve_project(None)
     project, exists = _resolve_existing_or_default_project(target)
     session = session_mod.load(project) if exists else None
-    _json_output({
+    _output({
         "ok": True,
         "result": {
             "input": str(target),
@@ -358,12 +473,12 @@ def list_loaders(binary: str, ida_install_dir: str | None):
     """List available IDA loaders and aliases, optionally with candidates for a binary."""
     binary_path = Path(binary).resolve() if binary else None
     if binary_path is not None and not binary_path.exists():
-        _json_error("FileNotFound", f"Binary not found: {binary}")
+        _error("FileNotFound", f"Binary not found: {binary}")
     aliases = [
         {"alias": alias, "loader": loader}
         for alias, loader in sorted(LOADER_ALIASES.items())
     ]
-    _json_output({
+    _output({
         "ok": True,
         "result": {
             "binary": str(binary_path) if binary_path else None,
@@ -404,24 +519,24 @@ def start(
 
     # Binary is optional when opening an existing IDB
     if not binary and not project:
-        _json_error("MissingArgument", "Provide either BINARY or --project")
+        _error("MissingArgument", "Provide either BINARY or --project")
 
     binary_path = None
     if binary:
         binary_path = Path(binary).resolve()
         if not binary_path.exists():
-            _json_error("FileNotFound", f"Binary not found: {binary}")
+            _error("FileNotFound", f"Binary not found: {binary}")
 
     if project:
         idb_path = Path(project).resolve()
     elif binary_path:
         idb_path = binary_path.with_suffix(".i64")
     else:
-        _json_error("MissingArgument", "Provide either BINARY or --project")
+        _error("MissingArgument", "Provide either BINARY or --project")
 
     # If no binary provided, the IDB must already exist
     if not binary_path and not idb_path.exists():
-        _json_error("FileNotFound", f"IDB not found and no binary provided: {idb_path}")
+        _error("FileNotFound", f"IDB not found and no binary provided: {idb_path}")
 
     mode = "headless" if headless else "gui"
     sock = session_mod.socket_path_for_project(idb_path)
@@ -473,7 +588,7 @@ def start(
                 binary_path=binary_path if (binary_path and not idb_path.exists()) else None,
                 extra_ida_args=extra_ida_args,
             )
-            _json_output({
+            _output({
                 "ok": True,
                 "result": {
                     "status": "started",
@@ -483,11 +598,11 @@ def start(
                 },
             })
         except TimeoutError as e:
-            _json_error("StartTimeout", str(e))
+            _error("StartTimeout", str(e))
         except Exception as e:
             if os.environ.get("IDA_RPC_DEBUG"):
                 traceback.print_exc(file=sys.stderr)
-            _json_error(type(e).__name__, str(e))
+            _error(type(e).__name__, str(e))
     else:
         if ida_dir_path:
             os.environ["IDA_INSTALL_DIR"] = str(ida_dir_path)
@@ -504,7 +619,7 @@ def start(
                 binary_path=binary_path if (binary_path and not idb_path.exists()) else None,
                 extra_ida_args=extra_ida_args,
             )
-            _json_output({
+            _output({
                 "ok": True,
                 "result": {
                     "status": "started",
@@ -596,7 +711,7 @@ def restart(
                 mode="headless", project_idb=idb, socket_path=sock,
             )
         else:
-            _json_error(
+            _error(
                 "NoSession",
                 f"No saved session for {idb}. Use 'ida-rpc start <binary>' first, or pass '--headless'.",
             )
@@ -619,13 +734,13 @@ def restart(
 
     try:
         start_background(session, timeout=effective_timeout)
-        _json_output({"ok": True, "result": {"status": "restarted", "socket": str(sock)}})
+        _output({"ok": True, "result": {"status": "restarted", "socket": str(sock)}})
     except TimeoutError as e:
-        _json_error("RestartTimeout", str(e))
+        _error("RestartTimeout", str(e))
     except Exception as e:
         if os.environ.get("IDA_RPC_DEBUG"):
             traceback.print_exc(file=sys.stderr)
-        _json_error(type(e).__name__, str(e))
+        _error(type(e).__name__, str(e))
 
 
 @cli.command(name="list")
@@ -682,7 +797,7 @@ def list_projects():
             pass
         results.append(entry)
 
-    _json_output({"ok": True, "result": {"projects": results, "count": len(results)}})
+    _output({"ok": True, "result": {"projects": results, "count": len(results)}})
 
 
 @cli.command()
@@ -708,7 +823,7 @@ def status(project: str | None):
         except Exception:
             pass
 
-    _json_output({
+    _output({
         "ok": True,
         "result": {
             "running": running,
@@ -742,7 +857,7 @@ def stop(project: str | None, stop_all: bool):
                     not_running.append(str(sock))
                 else:
                     failed.append(str(sock))
-        _json_output({
+        _output({
             "ok": True,
             "result": {
                 "status": "stopped_all",
@@ -758,9 +873,9 @@ def stop(project: str | None, stop_all: bool):
     sock = session_mod.socket_path_for_project(idb)
 
     if stop_daemon(sock):
-        _json_output({"ok": True, "result": {"status": "stopped"}})
+        _output({"ok": True, "result": {"status": "stopped"}})
     else:
-        _json_error("NotRunning", "Daemon is not running.")
+        _error("NotRunning", "Daemon is not running.")
 
 
 # ---------------------------------------------------------------------------
@@ -771,6 +886,7 @@ def stop(project: str | None, stop_all: bool):
 @click.argument("func")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def get_function(func: str, project: str | None):
+    """Get information about a single function."""
     _rpc_command(_resolve_project(project), "function", {"func": func})
 
 
@@ -789,6 +905,7 @@ def list_functions(
     with_body: bool,
     project: str | None,
 ):
+    """List functions with optional pagination."""
     args: dict = {"offset": offset}
     if limit is not None:
         args["limit"] = limit
@@ -804,12 +921,14 @@ def list_functions(
 @cli.command(name="imports")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_imports(project: str | None):
+    """List imported symbols."""
     _rpc_command(_resolve_project(project), "imports", {})
 
 
 @cli.command(name="exports")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_exports(project: str | None):
+    """List exported symbols."""
     _rpc_command(_resolve_project(project), "exports", {})
 
 
@@ -820,6 +939,7 @@ def list_exports(project: str | None):
 @click.option("--no-makecode", is_flag=True, default=False)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def add_entry(address: str, name: str, ordinal: int, no_makecode: bool, project: str | None):
+    """Add an entry point."""
     _rpc_command(_resolve_project(project), "add_entry", {
         "address": address, "name": name, "ordinal": ordinal, "makecode": not no_makecode,
     })
@@ -830,6 +950,7 @@ def add_entry(address: str, name: str, ordinal: int, no_makecode: bool, project:
 @click.argument("name")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def rename_entry(ordinal: int, name: str, project: str | None):
+    """Rename an entry point."""
     _rpc_command(_resolve_project(project), "rename_entry", {
         "ordinal": ordinal, "name": name,
     })
@@ -838,6 +959,7 @@ def rename_entry(ordinal: int, name: str, project: str | None):
 @cli.command(name="metadata")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def binary_metadata(project: str | None):
+    """Show binary metadata."""
     _rpc_command(_resolve_project(project), "metadata", {})
 
 
@@ -845,12 +967,14 @@ def binary_metadata(project: str | None):
 @click.option("--limit", "-l", type=int, default=500)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_relocations(limit: int, project: str | None):
+    """List relocation/fixup entries."""
     _rpc_command(_resolve_project(project), "relocations", {"limit": limit})
 
 
 @cli.command(name="calling-conventions")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_calling_conventions(project: str | None):
+    """List valid calling conventions for the current processor."""
     _rpc_command(_resolve_project(project), "list_calling_conventions", {})
 
 
@@ -859,6 +983,7 @@ def list_calling_conventions(project: str | None):
 @click.option("--limit", "-l", type=int, default=100)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def search_strings(query: str, limit: int, project: str | None):
+    """Search strings (empty query lists all)."""
     _rpc_command(_resolve_project(project), "strings", {"query": query, "limit": limit})
 
 
@@ -868,6 +993,7 @@ def search_strings(query: str, limit: int, project: str | None):
 @click.option("--address", "-a", type=str, default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def find_string(query: str, limit: int, address: str, project: str | None):
+    """Search for strings matching a query."""
     args: dict = {"query": query, "limit": limit}
     if address:
         args["address"] = address
@@ -880,6 +1006,7 @@ def find_string(query: str, limit: int, address: str, project: str | None):
 @click.option("--offset", "-o", type=int, default=0)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def search_symbols(query: str, limit: int, offset: int, project: str | None):
+    """Search named symbols."""
     _rpc_command(_resolve_project(project), "symbols", {
         "query": query, "limit": limit, "offset": offset,
     })
@@ -891,6 +1018,7 @@ def search_symbols(query: str, limit: int, offset: int, project: str | None):
 @click.option("--address", "-a", type=str, default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def find_bytes(pattern: str, limit: int, address: str, project: str | None):
+    """Search for a byte pattern."""
     args: dict = {"pattern": pattern, "limit": limit}
     if address:
         args["address"] = address
@@ -900,12 +1028,14 @@ def find_bytes(pattern: str, limit: int, address: str, project: str | None):
 @cli.command(name="memory-map")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def memory_map(project: str | None):
+    """List memory segments with RWX permissions."""
     _rpc_command(_resolve_project(project), "memory_map", {})
 
 
 @cli.command(name="segments")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_segments(project: str | None):
+    """List segments (alias for memory-map)."""
     _rpc_command(_resolve_project(project), "list_segments", {})
 
 
@@ -946,7 +1076,7 @@ def basefind(
         # Run locally — no daemon needed
         from ida_rpc.server.tools.basefind import run_basefind
         result = run_basefind(path, **args)
-        _json_output(result)
+        _output(result)
     else:
         # Fall back to RPC for the currently loaded binary
         _rpc_command(_resolve_project(project), "basefind", args)
@@ -961,6 +1091,7 @@ def basefind(
 @click.option("--timeout", "-t", type=int, default=120, show_default=True)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def decompile(func: str, timeout: int, project: str | None):
+    """Decompile a function to pseudo-C."""
     _rpc_command(_resolve_project(project), "decompile", {"func": func, "timeout": timeout})
 
 
@@ -969,6 +1100,7 @@ def decompile(func: str, timeout: int, project: str | None):
 @click.option("--function", "-f", default="", help="Filter by function name substring")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def decompile_all(limit: int, function: str, project: str | None):
+    """Bulk decompile all functions."""
     args: dict = {"limit": limit}
     if function:
         args["function"] = function
@@ -979,6 +1111,7 @@ def decompile_all(limit: int, function: str, project: str | None):
 @click.argument("func")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def decompile_lvars(func: str, project: str | None):
+    """List local variables of a function."""
     _rpc_command(_resolve_project(project), "decompile_lvars", {"func": func})
 
 
@@ -988,6 +1121,7 @@ def decompile_lvars(func: str, project: str | None):
 @click.argument("new_name")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_lvar_name(func: str, lvar: str, new_name: str, project: str | None):
+    """Rename a local variable."""
     _rpc_command(_resolve_project(project), "set_lvar_name", {
         "func": func, "lvar": lvar, "new_name": new_name,
     })
@@ -999,6 +1133,7 @@ def set_lvar_name(func: str, lvar: str, new_name: str, project: str | None):
 @click.argument("type")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_lvar_type(func: str, lvar: str, type: str, project: str | None):
+    """Set the type of a local variable."""
     _rpc_command(_resolve_project(project), "set_lvar_type", {
         "func": func, "lvar": lvar, "type": type,
     })
@@ -1009,6 +1144,7 @@ def set_lvar_type(func: str, lvar: str, type: str, project: str | None):
 @click.option("--maturity", "-m", type=int, default=None)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def decompile_microcode(func: str, maturity: int | None, project: str | None):
+    """Decompile a function to microcode."""
     args: dict = {"func": func}
     if maturity is not None:
         args["maturity"] = maturity
@@ -1020,6 +1156,7 @@ def decompile_microcode(func: str, maturity: int | None, project: str | None):
 @click.argument("target")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def decompiler_xrefs(func: str, target: str, project: str | None):
+    """Find decompiler cross-references."""
     _rpc_command(_resolve_project(project), "decompiler_xrefs", {
         "func": func, "target": target,
     })
@@ -1030,6 +1167,7 @@ def decompiler_xrefs(func: str, target: str, project: str | None):
 @click.option("--limit", "-l", type=int, default=500)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def basic_blocks(func: str, limit: int, project: str | None):
+    """List CFG basic blocks with successors/predecessors."""
     _rpc_command(_resolve_project(project), "basic_blocks", {"func": func, "limit": limit})
 
 
@@ -1037,6 +1175,7 @@ def basic_blocks(func: str, limit: int, project: str | None):
 @click.argument("func")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def function_graph(func: str, project: str | None):
+    """Generate a function flow graph."""
     _rpc_command(_resolve_project(project), "function_graph", {"func": func})
 
 
@@ -1045,6 +1184,7 @@ def function_graph(func: str, project: str | None):
 @click.option("--title", default="call_graph")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def call_graph(mode: str, title: str, project: str | None):
+    """Generate a call graph."""
     _rpc_command(_resolve_project(project), "call_graph", {"mode": mode, "title": title})
 
 
@@ -1052,6 +1192,7 @@ def call_graph(mode: str, title: str, project: str | None):
 @click.argument("address")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def get_switch_info(address: str, project: str | None):
+    """Get switch/jump-table information."""
     _rpc_command(_resolve_project(project), "get_switch_info", {"address": address})
 
 
@@ -1060,6 +1201,7 @@ def get_switch_info(address: str, project: str | None):
 @click.option("--count", "-n", type=int, default=20, show_default=True)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def disassemble(address: str, count: int, project: str | None):
+    """Disassemble instructions at an address."""
     _rpc_command(_resolve_project(project), "disassemble", {"address": address, "count": count})
 
 
@@ -1068,6 +1210,7 @@ def disassemble(address: str, count: int, project: str | None):
 @click.argument("instruction")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def assemble(address: str, instruction: str, project: str | None):
+    """Assemble instruction text at an address."""
     _rpc_command(_resolve_project(project), "assemble", {"address": address, "instruction": instruction})
 
 
@@ -1076,6 +1219,7 @@ def assemble(address: str, instruction: str, project: str | None):
 @click.argument("length", type=HEX_INT)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def read_bytes(address: str, length: int, project: str | None):
+    """Hex dump bytes at an address."""
     _rpc_command(_resolve_project(project), "read_bytes", {"address": address, "length": length})
 
 
@@ -1084,6 +1228,7 @@ def read_bytes(address: str, length: int, project: str | None):
 @click.option("--strtype", type=str, default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def read_string(address: str, strtype: str, project: str | None):
+    """Read a string at an address."""
     args: dict = {"address": address}
     if strtype:
         args["strtype"] = strtype
@@ -1096,6 +1241,7 @@ def read_string(address: str, strtype: str, project: str | None):
 @click.option("--strtype", type=str, default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def create_string(address: str, length: int, strtype: str, project: str | None):
+    """Create a string at an address."""
     args: dict = {"address": address, "length": length}
     if strtype:
         args["strtype"] = strtype
@@ -1107,6 +1253,7 @@ def create_string(address: str, length: int, strtype: str, project: str | None):
 @click.argument("hex_data")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def write_bytes(address: str, hex_data: str, project: str | None):
+    """Patch bytes at an address."""
     _rpc_command(_resolve_project(project), "write_bytes", {"address": address, "hex": hex_data})
 
 
@@ -1116,6 +1263,7 @@ def write_bytes(address: str, hex_data: str, project: str | None):
 @click.option("--limit", "-l", type=int, default=500)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_patches(start: str, end: str, limit: int, project: str | None):
+    """List patched bytes."""
     args: dict = {"limit": limit}
     if start:
         args["start"] = start
@@ -1129,6 +1277,7 @@ def list_patches(start: str, end: str, limit: int, project: str | None):
 @click.option("--end", default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def revert_patch(start: str, end: str, project: str | None):
+    """Revert patched bytes."""
     args: dict = {"start": start}
     if end:
         args["end"] = end
@@ -1140,6 +1289,7 @@ def revert_patch(start: str, end: str, project: str | None):
 @click.argument("value", type=HEX_INT)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def patch_byte(address: str, value: int, project: str | None):
+    """Patch a byte at an address."""
     _rpc_command(_resolve_project(project), "patch_byte", {"address": address, "value": value})
 
 
@@ -1148,6 +1298,7 @@ def patch_byte(address: str, value: int, project: str | None):
 @click.argument("value", type=HEX_INT)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def patch_word(address: str, value: int, project: str | None):
+    """Patch a word at an address."""
     _rpc_command(_resolve_project(project), "patch_word", {"address": address, "value": value})
 
 
@@ -1156,6 +1307,7 @@ def patch_word(address: str, value: int, project: str | None):
 @click.argument("value", type=HEX_INT)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def patch_dword(address: str, value: int, project: str | None):
+    """Patch a dword at an address."""
     _rpc_command(_resolve_project(project), "patch_dword", {"address": address, "value": value})
 
 
@@ -1164,6 +1316,7 @@ def patch_dword(address: str, value: int, project: str | None):
 @click.argument("value", type=HEX_INT)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def patch_qword(address: str, value: int, project: str | None):
+    """Patch a qword at an address."""
     _rpc_command(_resolve_project(project), "patch_qword", {"address": address, "value": value})
 
 
@@ -1176,6 +1329,7 @@ def patch_qword(address: str, value: int, project: str | None):
 @click.option("--limit", "-l", type=int, default=500)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_problems(problem_type: str, limit: int, project: str | None):
+    """List IDA analysis problems."""
     args: dict = {"limit": limit}
     if problem_type:
         args["type"] = problem_type
@@ -1186,6 +1340,7 @@ def list_problems(problem_type: str, limit: int, project: str | None):
 @click.argument("address")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def file_offset(address: str, project: str | None):
+    """Convert an address to a file offset."""
     _rpc_command(_resolve_project(project), "file_offset", {"address": address})
 
 
@@ -1193,6 +1348,7 @@ def file_offset(address: str, project: str | None):
 @click.argument("offset", type=HEX_INT)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def file_offset_to_ea(offset: int, project: str | None):
+    """Convert a file offset to an address."""
     _rpc_command(_resolve_project(project), "file_offset_to_ea", {"offset": offset})
 
 
@@ -1200,6 +1356,7 @@ def file_offset_to_ea(offset: int, project: str | None):
 @click.argument("func")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def function_info(func: str, project: str | None):
+    """Show detailed function information."""
     _rpc_command(_resolve_project(project), "function_info", {"func": func})
 
 
@@ -1208,6 +1365,7 @@ def function_info(func: str, project: str | None):
 @click.option("--limit", "-l", type=int, default=5000)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def function_items(func: str, limit: int, project: str | None):
+    """List items belonging to a function."""
     _rpc_command(_resolve_project(project), "function_items", {"func": func, "limit": limit})
 
 
@@ -1215,6 +1373,7 @@ def function_items(func: str, limit: int, project: str | None):
 @click.argument("func")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def function_chunks(func: str, project: str | None):
+    """List chunks of a function."""
     _rpc_command(_resolve_project(project), "function_chunks", {"func": func})
 
 
@@ -1223,6 +1382,7 @@ def function_chunks(func: str, project: str | None):
 @click.argument("color", type=HEX_INT)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_function_color(func: str, color: int, project: str | None):
+    """Set the color of a function."""
     _rpc_command(_resolve_project(project), "set_function_color", {"func": func, "color": f"0x{color:08x}"})
 
 
@@ -1230,6 +1390,7 @@ def set_function_color(func: str, color: int, project: str | None):
 @click.argument("func")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def function_frame(func: str, project: str | None):
+    """Show the stack frame of a function."""
     _rpc_command(_resolve_project(project), "function_frame", {"func": func})
 
 
@@ -1237,6 +1398,7 @@ def function_frame(func: str, project: str | None):
 @click.argument("func")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_stack_vars(func: str, project: str | None):
+    """List stack variables of a function."""
     _rpc_command(_resolve_project(project), "list_stack_vars", {"func": func})
 
 
@@ -1247,6 +1409,7 @@ def list_stack_vars(func: str, project: str | None):
 @click.option("--new-name", "-n", required=True)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def rename_stack_var(func: str, offset: int, old_name: str, new_name: str, project: str | None):
+    """Rename a stack variable."""
     args: dict = {"func": func, "new_name": new_name}
     if offset >= 0:
         args["offset"] = offset
@@ -1262,6 +1425,7 @@ def rename_stack_var(func: str, offset: int, old_name: str, new_name: str, proje
 @click.option("--type", "var_type", required=True)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_stack_var_type(func: str, offset: int, name: str, var_type: str, project: str | None):
+    """Set the type of a stack variable."""
     args: dict = {"func": func, "type": var_type}
     if offset >= 0:
         args["offset"] = offset
@@ -1274,6 +1438,7 @@ def set_stack_var_type(func: str, offset: int, name: str, var_type: str, project
 @click.argument("func")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_reg_vars(func: str, project: str | None):
+    """List register variables of a function."""
     _rpc_command(_resolve_project(project), "list_reg_vars", {"func": func})
 
 
@@ -1283,6 +1448,7 @@ def list_reg_vars(func: str, project: str | None):
 @click.option("--name", default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def stack_var_xrefs(func: str, offset: int, name: str, project: str | None):
+    """Find cross-references to a stack variable."""
     args: dict = {"func": func}
     if offset >= 0:
         args["offset"] = offset
@@ -1296,6 +1462,7 @@ def stack_var_xrefs(func: str, offset: int, name: str, project: str | None):
 @click.option("--limit", "-l", type=int, default=50)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def xrefs_to(target: str, limit: int, project: str | None):
+    """Find references to a target."""
     _rpc_command(_resolve_project(project), "xrefs_to", {"target": target, "limit": limit})
 
 
@@ -1305,6 +1472,7 @@ def xrefs_to(target: str, limit: int, project: str | None):
 @click.option("--no-stack", "no_stack", is_flag=True, default=False)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def xrefs_from(target: str, limit: int, no_stack: bool, project: str | None):
+    """Find references from a target."""
     _rpc_command(_resolve_project(project), "xrefs_from", {
         "target": target, "limit": limit, "no_stack": no_stack,
     })
@@ -1319,6 +1487,7 @@ def xrefs_from(target: str, limit: int, no_stack: bool, project: str | None):
 @click.argument("target_type", type=click.Choice(["function", "address"]), default="function")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def goto(target: str, target_type: str, project: str | None):
+    """Jump to a function or address in the IDA UI."""
     _rpc_command(_resolve_project(project), "goto", {
         "target": target, "target_type": target_type,
     })
@@ -1333,6 +1502,7 @@ def goto(target: str, target_type: str, project: str | None):
 @click.argument("new_name")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def rename_function(target: str, new_name: str, project: str | None):
+    """Rename a function."""
     _rpc_command(_resolve_project(project), "rename_function", {
         "target": target, "new_name": new_name,
     })
@@ -1344,6 +1514,7 @@ def rename_function(target: str, new_name: str, project: str | None):
 @click.option("--create", is_flag=True, default=False)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def rename_symbol(address: str, new_name: str, create: bool, project: str | None):
+    """Rename a symbol."""
     _rpc_command(_resolve_project(project), "rename_symbol", {
         "address": address, "new_name": new_name, "create": create,
     })
@@ -1354,6 +1525,7 @@ def rename_symbol(address: str, new_name: str, create: bool, project: str | None
 @click.argument("name")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def create_label(address: str, name: str, project: str | None):
+    """Create or rename a label."""
     _rpc_command(_resolve_project(project), "create_label", {
         "address": address, "name": name,
     })
@@ -1365,6 +1537,7 @@ def create_label(address: str, name: str, project: str | None):
 @click.option("--type", "comment_type", type=click.Choice(["plate", "pre", "post", "eol", "repeatable"]), default="eol")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_comment(address: str, comment: str, comment_type: str, project: str | None):
+    """Set a comment at an address."""
     _rpc_command(_resolve_project(project), "set_comment", {
         "address": address, "comment": comment, "comment_type": comment_type,
     })
@@ -1375,6 +1548,7 @@ def set_comment(address: str, comment: str, comment_type: str, project: str | No
 @click.argument("signature")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_signature(target: str, signature: str, project: str | None):
+    """Set a function's prototype/signature."""
     _rpc_command(_resolve_project(project), "set_function_signature", {
         "target": target, "signature": signature,
     })
@@ -1385,6 +1559,7 @@ def set_signature(target: str, signature: str, project: str | None):
 @click.argument("data_type")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_data_type(address: str, data_type: str, project: str | None):
+    """Set the data type at an address."""
     _rpc_command(_resolve_project(project), "set_data_type", {
         "address": address, "data_type": data_type,
     })
@@ -1395,6 +1570,7 @@ def set_data_type(address: str, data_type: str, project: str | None):
 @click.option("--name", "-n", default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def create_function(address: str, name: str, project: str | None):
+    """Create a function at an address."""
     args: dict = {"address": address}
     if name:
         args["name"] = name
@@ -1405,6 +1581,7 @@ def create_function(address: str, name: str, project: str | None):
 @click.argument("target")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def delete_function(target: str, project: str | None):
+    """Delete a function definition."""
     _rpc_command(_resolve_project(project), "delete_function", {"target": target})
 
 
@@ -1431,6 +1608,7 @@ def undefine(address: str, length: int, project: str | None):
 @click.option("--clear", is_flag=True, default=False)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_thunk(target: str, thunk_target: str, clear: bool, project: str | None):
+    """Mark or unmark a function as a thunk."""
     args: dict = {"target": target, "clear": clear}
     if thunk_target:
         args["thunk_target"] = thunk_target
@@ -1442,6 +1620,7 @@ def set_thunk(target: str, thunk_target: str, clear: bool, project: str | None):
 @click.argument("convention")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_calling_convention(target: str, convention: str, project: str | None):
+    """Change a function's calling convention."""
     _rpc_command(_resolve_project(project), "set_calling_convention", {
         "target": target, "convention": convention,
     })
@@ -1452,6 +1631,7 @@ def set_calling_convention(target: str, convention: str, project: str | None):
 @click.option("--from-file", "from_file", type=click.Path(exists=True), help="JSON file with operations array")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def batch_rename(mode: str, from_file: str | None, project: str | None):
+    """Bulk rename functions or symbols from a JSON file."""
     if from_file:
         with open(from_file) as f:
             data = json.load(f)
@@ -1468,6 +1648,7 @@ def batch_rename(mode: str, from_file: str | None, project: str | None):
 @click.option("--from-file", "from_file", type=click.Path(exists=True), help="JSON file with operations array")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def batch_set_comment(from_file: str | None, project: str | None):
+    """Bulk set comments from a JSON file."""
     if from_file:
         with open(from_file) as f:
             data = json.load(f)
@@ -1491,6 +1672,7 @@ def batch_set_comment(from_file: str | None, project: str | None):
 @click.option("--or-replace", "or_replace", is_flag=True, default=False)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def create_struct(struct_name: str, fields: tuple, if_not_exists: bool, or_replace: bool, project: str | None):
+    """Create a struct type."""
     if len(fields) % 2 != 0:
         click.echo("Error: FIELDS must be pairs of TYPE NAME", err=True)
         sys.exit(1)
@@ -1511,6 +1693,7 @@ def create_struct(struct_name: str, fields: tuple, if_not_exists: bool, or_repla
 @click.option("--or-replace", "or_replace", is_flag=True, default=False)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def create_union(union_name: str, fields: tuple, if_not_exists: bool, or_replace: bool, project: str | None):
+    """Create a union type."""
     if len(fields) % 2 != 0:
         click.echo("Error: FIELDS must be pairs of TYPE NAME", err=True)
         sys.exit(1)
@@ -1532,6 +1715,7 @@ def create_union(union_name: str, fields: tuple, if_not_exists: bool, or_replace
 @click.option("--or-replace", "or_replace", is_flag=True, default=False)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def create_enum(enum_name: str, values: tuple, size: str, if_not_exists: bool, or_replace: bool, project: str | None):
+    """Create an enum type."""
     if len(values) % 2 != 0:
         click.echo("Error: VALUES must be pairs of NAME VALUE", err=True)
         sys.exit(1)
@@ -1554,6 +1738,7 @@ def create_enum(enum_name: str, values: tuple, size: str, if_not_exists: bool, o
 @click.option("--comment", default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def modify_struct(struct_name: str, action: str, field: str, new_field_name: str, new_type: str, comment: str, project: str | None):
+    """Modify a struct field."""
     args: dict = {"name": struct_name, "action": action, "field": field}
     if new_field_name:
         args["new_field_name"] = new_field_name
@@ -1571,6 +1756,7 @@ def modify_struct(struct_name: str, action: str, field: str, new_field_name: str
 @click.option("--value", type=HEX_INT, default=0)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def modify_enum(enum_name: str, action: str, member: str, value: int, project: str | None):
+    """Modify an enum member."""
     _rpc_command(_resolve_project(project), "modify_enum", {
         "name": enum_name, "action": action, "member": member, "value": value,
     })
@@ -1582,6 +1768,7 @@ def modify_enum(enum_name: str, action: str, member: str, value: int, project: s
 @click.option("--length", type=HEX_INT, default=0)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def clear_data_range(start: str, end: str, length: int, project: str | None):
+    """Undefine data in an address range."""
     args: dict = {"start": start}
     if end:
         args["end"] = end
@@ -1601,6 +1788,7 @@ def clear_data_range(start: str, end: str, length: int, project: str | None):
 @click.option("--type-size", "type_size", type=int, default=None)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def apply_data_type_range(start: str, data_type: str, end: str, length: int, type_size: int | None, project: str | None):
+    """Stamp a data type across an address range."""
     args: dict = {"start": start, "data_type": data_type}
     if end:
         args["end"] = end
@@ -1618,6 +1806,7 @@ def apply_data_type_range(start: str, data_type: str, end: str, length: int, typ
 @click.argument("path")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def import_til(path: str, project: str | None):
+    """Import types from a TIL file."""
     _rpc_command(_resolve_project(project), "import_til", {"path": path})
 
 
@@ -1625,6 +1814,7 @@ def import_til(path: str, project: str | None):
 @click.argument("path")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def export_til(path: str, project: str | None):
+    """Export types to a TIL file."""
     _rpc_command(_resolve_project(project), "export_til", {"path": path})
 
 
@@ -1632,6 +1822,7 @@ def export_til(path: str, project: str | None):
 @click.argument("name")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def delete_type(name: str, project: str | None):
+    """Delete a type by name."""
     _rpc_command(_resolve_project(project), "delete_type", {"name": name})
 
 
@@ -1639,6 +1830,7 @@ def delete_type(name: str, project: str | None):
 @click.argument("name")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def get_type_info(name: str, project: str | None):
+    """Get information about a type."""
     _rpc_command(_resolve_project(project), "get_type_info", {"name": name})
 
 
@@ -1648,6 +1840,7 @@ def get_type_info(name: str, project: str | None):
 @click.option("--limit", "-l", type=int, default=200)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_data_types(category: str, query: str, limit: int, project: str | None):
+    """List defined data types."""
     _rpc_command(_resolve_project(project), "list_data_types", {
         "category": category, "query": query, "limit": limit,
     })
@@ -1659,6 +1852,7 @@ def list_data_types(category: str, query: str, limit: int, project: str | None):
 @click.option("--limit", "-l", type=int, default=100)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_labels(address: str, end: str, limit: int, project: str | None):
+    """List labels near an address."""
     args: dict = {"address": address, "limit": limit}
     if end:
         args["end"] = end
@@ -1672,6 +1866,7 @@ def list_labels(address: str, end: str, limit: int, project: str | None):
 @click.option("--clear", is_flag=True, default=False)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_equate(address: str, operand: int, enum: str, clear: bool, project: str | None):
+    """Attach an enum to an instruction operand."""
     _rpc_command(_resolve_project(project), "set_equate", {
         "address": address, "operand": operand, "enum": enum, "clear": clear,
     })
@@ -1683,6 +1878,7 @@ def set_equate(address: str, operand: int, enum: str, clear: bool, project: str 
 @click.option("--limit", "-l", type=int, default=200)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_equates(address: str, end: str, limit: int, project: str | None):
+    """List enum operands."""
     args: dict = {"limit": limit}
     if address:
         args["address"] = address
@@ -1702,6 +1898,7 @@ def list_equates(address: str, end: str, limit: int, project: str | None):
 @click.option("--comment", "-m", default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_bookmark(address: str, bm_type: str, category: str, comment: str, project: str | None):
+    """Set a bookmark at an address."""
     _rpc_command(_resolve_project(project), "set_bookmark", {
         "address": address,
         "type": bm_type, "category": category, "comment": comment,
@@ -1714,6 +1911,7 @@ def set_bookmark(address: str, bm_type: str, category: str, comment: str, projec
 @click.option("--limit", "-l", type=int, default=200)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_bookmarks(bm_type: str, address: str, limit: int, project: str | None):
+    """List bookmarks."""
     args: dict = {"limit": limit}
     if bm_type:
         args["type"] = bm_type
@@ -1727,6 +1925,7 @@ def list_bookmarks(bm_type: str, address: str, limit: int, project: str | None):
 @click.option("--type", "bm_type", type=click.Choice(["Note", "Warning", "Error", "Info", "Analysis"]), default="Note")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def remove_bookmark(address: str, bm_type: str, project: str | None):
+    """Remove a bookmark."""
     _rpc_command(_resolve_project(project), "remove_bookmark", {
         "address": address, "type": bm_type,
     })
@@ -1743,6 +1942,7 @@ def remove_bookmark(address: str, bm_type: str, project: str | None):
 @click.option("--class", "sclass", default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def add_segment(start: str, end: str, name: str, sclass: str, project: str | None):
+    """Create a new segment."""
     args: dict = {"start": start, "end": end}
     if name:
         args["name"] = name
@@ -1761,6 +1961,7 @@ def add_segment(start: str, end: str, name: str, sclass: str, project: str | Non
 @click.option("--bitness", "-b", type=int, default=None, help="0=16-bit, 1=32-bit, 2=64-bit")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def edit_segment(start: str, name: str, sclass: str, perm_read: bool | None, perm_write: bool | None, perm_exec: bool | None, bitness: int | None, project: str | None):
+    """Modify a segment."""
     args: dict = {"start": start}
     if name:
         args["name"] = name
@@ -1781,6 +1982,7 @@ def edit_segment(start: str, name: str, sclass: str, perm_read: bool | None, per
 @click.argument("start")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def delete_segment(start: str, project: str | None):
+    """Delete a segment."""
     _rpc_command(_resolve_project(project), "delete_segment", {"start": start})
 
 
@@ -1794,6 +1996,7 @@ def delete_segment(start: str, project: str | None):
 @click.option("--sdir", default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_start(path: str, args: str, sdir: str, project: str | None):
+    """Start debugging a program."""
     rpc_args: dict = {}
     if path:
         rpc_args["path"] = path
@@ -1808,42 +2011,49 @@ def debug_start(path: str, args: str, sdir: str, project: str | None):
 @click.argument("pid", type=int)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_attach(pid: int, project: str | None):
+    """Attach the debugger to a process."""
     _rpc_command(_resolve_project(project), "debug_attach", {"pid": pid})
 
 
 @cli.command(name="debug-detach")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_detach(project: str | None):
+    """Detach the debugger."""
     _rpc_command(_resolve_project(project), "debug_detach", {})
 
 
 @cli.command(name="debug-exit")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_exit(project: str | None):
+    """Exit the debugger."""
     _rpc_command(_resolve_project(project), "debug_exit", {})
 
 
 @cli.command(name="debug-continue")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_continue(project: str | None):
+    """Continue execution in the debugger."""
     _rpc_command(_resolve_project(project), "debug_continue", {})
 
 
 @cli.command(name="debug-suspend")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_suspend(project: str | None):
+    """Suspend execution."""
     _rpc_command(_resolve_project(project), "debug_suspend", {})
 
 
 @cli.command(name="debug-step-into")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_step_into(project: str | None):
+    """Single step into."""
     _rpc_command(_resolve_project(project), "debug_step_into", {})
 
 
 @cli.command(name="debug-step-over")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_step_over(project: str | None):
+    """Step over a call."""
     _rpc_command(_resolve_project(project), "debug_step_over", {})
 
 
@@ -1851,18 +2061,21 @@ def debug_step_over(project: str | None):
 @click.argument("address")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_run_to(address: str, project: str | None):
+    """Run execution to an address."""
     _rpc_command(_resolve_project(project), "debug_run_to", {"address": address})
 
 
 @cli.command(name="debug-status")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_status(project: str | None):
+    """Get debugger status."""
     _rpc_command(_resolve_project(project), "debug_status", {})
 
 
 @cli.command(name="debug-get-registers")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_get_registers(project: str | None):
+    """Get debugger register values."""
     _rpc_command(_resolve_project(project), "debug_get_registers", {})
 
 
@@ -1871,6 +2084,7 @@ def debug_get_registers(project: str | None):
 @click.argument("value", type=HEX_INT)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_set_register(register: str, value: int, project: str | None):
+    """Set a debugger register value."""
     _rpc_command(_resolve_project(project), "debug_set_register", {
         "register": register, "value": value,
     })
@@ -1881,6 +2095,7 @@ def debug_set_register(register: str, value: int, project: str | None):
 @click.argument("length", type=HEX_INT)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_read_memory(address: str, length: int, project: str | None):
+    """Read memory from the debuggee."""
     _rpc_command(_resolve_project(project), "debug_read_memory", {
         "address": address, "length": length,
     })
@@ -1891,6 +2106,7 @@ def debug_read_memory(address: str, length: int, project: str | None):
 @click.argument("hex_data")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_write_memory(address: str, hex_data: str, project: str | None):
+    """Write memory in the debuggee."""
     _rpc_command(_resolve_project(project), "debug_write_memory", {
         "address": address, "hex": hex_data,
     })
@@ -1899,6 +2115,7 @@ def debug_write_memory(address: str, hex_data: str, project: str | None):
 @cli.command(name="debug-breakpoints")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_breakpoints(project: str | None):
+    """List debugger breakpoints."""
     _rpc_command(_resolve_project(project), "debug_breakpoints", {})
 
 
@@ -1906,6 +2123,7 @@ def debug_breakpoints(project: str | None):
 @click.argument("address")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_add_breakpoint(address: str, project: str | None):
+    """Add a debugger breakpoint."""
     _rpc_command(_resolve_project(project), "debug_add_breakpoint", {"address": address})
 
 
@@ -1913,6 +2131,7 @@ def debug_add_breakpoint(address: str, project: str | None):
 @click.argument("address")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_delete_breakpoint(address: str, project: str | None):
+    """Delete a debugger breakpoint."""
     _rpc_command(_resolve_project(project), "debug_delete_breakpoint", {"address": address})
 
 
@@ -1921,6 +2140,7 @@ def debug_delete_breakpoint(address: str, project: str | None):
 @click.option("--enabled/--disabled", default=True)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_enable_breakpoint(address: str, enabled: bool, project: str | None):
+    """Enable or disable a breakpoint."""
     _rpc_command(_resolve_project(project), "debug_enable_breakpoint", {
         "address": address, "enabled": enabled,
     })
@@ -1929,18 +2149,21 @@ def debug_enable_breakpoint(address: str, enabled: bool, project: str | None):
 @cli.command(name="debug-stack-trace")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_stack_trace(project: str | None):
+    """Get the debugger stack trace."""
     _rpc_command(_resolve_project(project), "debug_stack_trace", {})
 
 
 @cli.command(name="debug-modules")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_modules(project: str | None):
+    """List modules in the debuggee."""
     _rpc_command(_resolve_project(project), "debug_modules", {})
 
 
 @cli.command(name="debug-threads")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def debug_threads(project: str | None):
+    """List debugger threads."""
     _rpc_command(_resolve_project(project), "debug_threads", {})
 
 
@@ -1949,6 +2172,7 @@ def debug_threads(project: str | None):
 @click.option("--register", "-r", default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def get_processor_context(address: str, register: str, project: str | None):
+    """Read processor context registers."""
     args: dict = {}
     if address:
         args["address"] = address
@@ -1964,6 +2188,7 @@ def get_processor_context(address: str, register: str, project: str | None):
 @click.option("--end", default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_processor_context(address: str, register: str, value: int, end: str, project: str | None):
+    """Set a processor context register."""
     args: dict = {"address": address, "register": register, "value": value}
     if end:
         args["end"] = end
@@ -1975,6 +2200,7 @@ def set_processor_context(address: str, register: str, value: int, end: str, pro
 @click.argument("operand", type=int, default=0)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def operand_struct_path(address: str, operand: int, project: str | None):
+    """Get struct path for an operand."""
     _rpc_command(_resolve_project(project), "operand_struct_path", {
         "address": address, "operand": operand,
     })
@@ -1985,6 +2211,7 @@ def operand_struct_path(address: str, operand: int, project: str | None):
 @click.argument("color", type=HEX_INT)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def set_color(address: str, color: int, project: str | None):
+    """Set the color at an address."""
     _rpc_command(_resolve_project(project), "set_color", {
         "address": address, "color": f"0x{color:08x}",
     })
@@ -1994,6 +2221,7 @@ def set_color(address: str, color: int, project: str | None):
 @click.argument("address")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def get_color(address: str, project: str | None):
+    """Get the color at an address."""
     _rpc_command(_resolve_project(project), "get_color", {"address": address})
 
 
@@ -2001,6 +2229,7 @@ def get_color(address: str, project: str | None):
 @click.argument("address")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def del_color(address: str, project: str | None):
+    """Delete the color at an address."""
     _rpc_command(_resolve_project(project), "del_color", {"address": address})
 
 
@@ -2009,6 +2238,7 @@ def del_color(address: str, project: str | None):
 @click.option("--end", default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_try_blocks(start: str, end: str, project: str | None):
+    """List try/catch blocks."""
     args: dict = {}
     if start:
         args["start"] = start
@@ -2026,6 +2256,7 @@ def list_try_blocks(start: str, end: str, project: str | None):
 @click.option("--parent", default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def create_namespace(namespace: str, parent: str, project: str | None):
+    """Create a namespace."""
     args: dict = {"namespace": namespace}
     if parent:
         args["parent"] = parent
@@ -2036,6 +2267,7 @@ def create_namespace(namespace: str, parent: str, project: str | None):
 @click.option("--limit", "-l", type=int, default=200)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_namespaces(limit: int, project: str | None):
+    """List namespaces."""
     _rpc_command(_resolve_project(project), "list_namespaces", {"limit": limit})
 
 
@@ -2048,6 +2280,7 @@ def list_namespaces(limit: int, project: str | None):
 @click.argument("tag")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def tag_function(target: str, tag: str, project: str | None):
+    """Tag a function."""
     _rpc_command(_resolve_project(project), "tag_function", {"target": target, "tag": tag})
 
 
@@ -2056,12 +2289,14 @@ def tag_function(target: str, tag: str, project: str | None):
 @click.argument("tag")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def untag_function(target: str, tag: str, project: str | None):
+    """Remove a tag from a function."""
     _rpc_command(_resolve_project(project), "untag_function", {"target": target, "tag": tag})
 
 
 @cli.command(name="list-tags")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_tags(project: str | None):
+    """List all function tags."""
     _rpc_command(_resolve_project(project), "list_tags", {})
 
 
@@ -2070,6 +2305,7 @@ def list_tags(project: str | None):
 @click.option("--limit", "-l", type=int, default=200)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def functions_by_tag(tag: str, limit: int, project: str | None):
+    """Find functions by tag."""
     _rpc_command(_resolve_project(project), "functions_by_tag", {"tag": tag, "limit": limit})
 
 
@@ -2080,12 +2316,14 @@ def functions_by_tag(tag: str, limit: int, project: str | None):
 @cli.command(name="save")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def save_program(project: str | None):
+    """Save the database."""
     _rpc_command(_resolve_project(project), "save", {})
 
 
 @cli.command(name="list-binaries")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 def list_binaries(project: str | None):
+    """List binaries loaded in the current IDB."""
     _rpc_command(_resolve_project(project), "list_binaries", {})
 
 
@@ -2093,6 +2331,6 @@ def main():
     try:
         return cli.main(standalone_mode=False)
     except click.ClickException as e:
-        _json_error(type(e).__name__, e.format_message())
+        _error(type(e).__name__, e.format_message())
     except click.Abort:
-        _json_error("Abort", "Command aborted")
+        _error("Abort", "Command aborted")

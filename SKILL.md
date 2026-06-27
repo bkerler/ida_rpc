@@ -4,7 +4,7 @@ How to use `ida-rpc` as a reverse-engineering skill inside an agent workflow.
 
 ## What This Skill Provides
 
-Direct, structured access to IDA Pro's analysis engine without GUI interaction. Every command returns JSON — no screen scraping, no MCP protocol overhead. Works in both interactive (GUI) and automation (headless) modes.
+Direct, structured access to IDA Pro's analysis engine without GUI interaction. Commands print human-readable text by default; pass `--json` (before the subcommand) or set `IDA_RPC_JSON=1` for JSON. No screen scraping, no MCP protocol overhead. Works in both interactive (GUI) and automation (headless) modes.
 
 ## When to Use This Skill
 
@@ -27,8 +27,9 @@ ida-rpc find-project /path/to/binary-or-existing.i64
 ida-rpc list-loaders /path/to/binary
 ```
 
-Use `capabilities` as the stable automation probe. It returns JSON describing
-the supported command groups and the recommended agent workflow.
+Use `capabilities` as the stable automation probe. It describes the supported
+command groups and the recommended agent workflow. Add `--json` for machine-readable
+output.
 
 ### 2. Start the Daemon
 
@@ -71,7 +72,9 @@ ida-rpc list
 
 ### 5. Run analysis commands
 
-All commands output JSON. Use `jq` for filtering if needed.
+Commands print human-readable text by default. Add `--json` (before the
+subcommand) or set `IDA_RPC_JSON=1` when you need structured output for `jq`
+or other tools.
 
 ```bash
 # List functions (paginated)
@@ -122,7 +125,7 @@ ida-rpc stop
 
 | Command | Args | Description |
 |---------|------|-------------|
-| `capabilities` | | Print agent-discoverable JSON command capabilities |
+| `capabilities` | | Print agent-discoverable command capabilities |
 | `find-project <binary-or-idb>` | | Resolve IDB path, socket path, session state, and recommended start command |
 | `list-loaders [binary] [--ida-install-dir DIR]` | | List loader aliases, installed IDA loaders, and file-specific candidates |
 | `open <binary-or-idb> [--project <idb>] [--loader <name>] [--headless] [--detach]` | | Agent-friendly alias for `start` |

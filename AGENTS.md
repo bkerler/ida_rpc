@@ -31,8 +31,10 @@ ida-rpc set-comment <address> <comment> --project <idb>
 ida-rpc save --project <idb>
 ```
 
-All automation commands print JSON to stdout. Treat `{"ok": false, ...}` as a
-recoverable tool error. Set `IDA_RPC_DEBUG=1` only when a traceback is needed.
+All automation commands print human-readable text to stdout by default. Pass
+`--json` (before the subcommand) or set `IDA_RPC_JSON=1` for JSON output. Treat
+`{"ok": false, ...}` (JSON mode) or `Error: <error>: <message>` (human mode) as
+a recoverable tool error. Set `IDA_RPC_DEBUG=1` only when a traceback is needed.
 
 RPC queries should always be run outside the sandbox.
 

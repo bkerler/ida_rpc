@@ -11,7 +11,7 @@ integration with LLM agents, automation pipelines, and multi-agent setups.
 
 ## Features
 
-- **Structured JSON output** for every command — faster and more reliable than MCP
+- **Human-readable CLI output** by default, with `--json` or `IDA_RPC_JSON=1` for structured JSON — faster and more reliable than MCP
 - **Headless mode** — run via `ida -A` for CI/automation
 - **GUI mode** — works inside the interactive IDA Pro session
 - **Protocol compatible** with ghidra-rpc's CLI design
@@ -87,13 +87,13 @@ ida-rpc list
 
 ## Command Reference
 
-Every command outputs JSON. Commands that operate on an open database accept `--project <idb>` or read `IDA_RPC_PROJECT`.
+Commands print human-readable text by default. Pass `--json` (before the subcommand) or set `IDA_RPC_JSON=1` to get structured JSON. Commands that operate on an open database accept `--project <idb>` or read `IDA_RPC_PROJECT`.
 
 ### Lifecycle
 
 | Command | Description |
 |---------|-------------|
-| `ida-rpc capabilities` | Print agent-discoverable JSON command capabilities |
+| `ida-rpc capabilities` | Print agent-discoverable command capabilities |
 | `ida-rpc find-project <binary-or-idb>` | Resolve the IDB path, socket path, and recommended start command |
 | `ida-rpc open <binary> [--project <idb>] [--arch <arch>] [--base <addr>] [--headless] [--detach] [--clean]` | Agent-friendly alias for `start` |
 | `ida-rpc start <binary> [--project <idb>] [--arch <arch>] [--base <addr>] [--headless] [--detach] [--clean]` | Open binary and start daemon |
@@ -249,9 +249,10 @@ ida-rpc find-project /path/to/binary-or-idb
 
 After that, use `open`, `metadata`, `functions`, `decompile`, `disassemble`,
 `strings`, `xrefs-to`, `xrefs-from`, `rename-function`, `set-comment`, and
-`save`. Commands return JSON on stdout. Unexpected CLI/RPC failures are reported
-as `{"ok": false, "error": "...", "message": "..."}`; set `IDA_RPC_DEBUG=1` to
-also print tracebacks on stderr.
+`save`. Commands print human-readable text on stdout by default; pass `--json`
+(before the subcommand) or set `IDA_RPC_JSON=1` for JSON output. Unexpected
+CLI/RPC failures are reported on stderr as `Error: <error>: <message>` (or JSON
+with `--json`); set `IDA_RPC_DEBUG=1` to also print tracebacks on stderr.
 
 ## Architecture
 

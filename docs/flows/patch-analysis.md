@@ -27,12 +27,12 @@ socket paths are derived from the IDB path hash, so they won't conflict.
 
 ```bash
 # Get function counts
-IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V1 ida-rpc metadata | jq '.result.num_functions'
-IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V2 ida-rpc metadata | jq '.result.num_functions'
+IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V1 ida-rpc --json metadata | jq '.result.num_functions'
+IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V2 ida-rpc --json metadata | jq '.result.num_functions'
 
 # List all functions
-IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V1 ida-rpc functions > /tmp/v1_funcs.json
-IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V2 ida-rpc functions > /tmp/v2_funcs.json
+IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V1 ida-rpc --json functions > /tmp/v1_funcs.json
+IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V2 ida-rpc --json functions > /tmp/v2_funcs.json
 ```
 
 ## Step 4: Find Changed Functions
@@ -57,8 +57,8 @@ For functions that exist in both but may have changed:
 
 ```bash
 # Decompile the same-named function in both versions
-IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V1 ida-rpc decompile parse_arguments > /tmp/v1_parse.json
-IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V2 ida-rpc decompile parse_arguments > /tmp/v2_parse.json
+IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V1 ida-rpc --json decompile parse_arguments > /tmp/v1_parse.json
+IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V2 ida-rpc --json decompile parse_arguments > /tmp/v2_parse.json
 
 # Extract C code and diff
 jq -r '.result.c_code' /tmp/v1_parse.json > /tmp/v1_parse.c
@@ -72,7 +72,7 @@ When functions move due to code shifts, use byte signature matching:
 
 ```bash
 # Find a function's byte pattern in v1
-IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V1 ida-rpc disassemble 0x401000 --count 5 | jq '.result.instructions[].bytes'
+IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V1 ida-rpc --json disassemble 0x401000 --count 5 | jq '.result.instructions[].bytes'
 
 # Search for that pattern in v2
 IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V2 ida-rpc find-bytes "55 8b ec 83 ec"
@@ -84,10 +84,10 @@ For comprehensive comparison, use `decompile-all` to export all decompiled code:
 
 ```bash
 # Decompile all functions in v1
-IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V1 ida-rpc decompile-all --limit 0 > /tmp/v1_all.json
+IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V1 ida-rpc --json decompile-all --limit 0 > /tmp/v1_all.json
 
 # Decompile all functions in v2
-IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V2 ida-rpc decompile-all --limit 0 > /tmp/v2_all.json
+IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V2 ida-rpc --json decompile-all --limit 0 > /tmp/v2_all.json
 ```
 
 ## Step 8: Investigate New Functions
@@ -124,8 +124,8 @@ For small, critical functions, compare the raw assembly:
 
 ```bash
 # Disassemble the patched function in both versions
-IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V1 ida-rpc disassemble 0x401000 --count 20 > /tmp/v1_asm.json
-IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V2 ida-rpc disassemble 0x401000 --count 20 > /tmp/v2_asm.json
+IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V1 ida-rpc --json disassemble 0x401000 --count 20 > /tmp/v1_asm.json
+IDA_RPC_PROJECT=$IDA_RPC_PROJECT_V2 ida-rpc --json disassemble 0x401000 --count 20 > /tmp/v2_asm.json
 
 # Compare instruction bytes
 jq -r '.result.instructions[] | "\(.address): \(.mnemonic) \(.operands)"' /tmp/v1_asm.json

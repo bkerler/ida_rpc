@@ -168,7 +168,7 @@ class TestCliAgentDiscovery:
     runner = CliRunner()
 
     def test_capabilities_outputs_json(self):
-        result = self.runner.invoke(cli, ["capabilities"])
+        result = self.runner.invoke(cli, ["--json", "capabilities"])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["ok"] is True
@@ -179,7 +179,7 @@ class TestCliAgentDiscovery:
         binary = tmp_path / "sample.bin"
         binary.write_bytes(b"\x7fELF")
 
-        result = self.runner.invoke(cli, ["find-project", str(binary)])
+        result = self.runner.invoke(cli, ["--json", "find-project", str(binary)])
         assert result.exit_code == 0
         data = json.loads(result.output)
         assert data["ok"] is True
@@ -190,7 +190,7 @@ class TestCliAgentDiscovery:
         binary = tmp_path / "loader.bin"
         binary.write_bytes((0x544F4F42).to_bytes(4, "little") + b"\x00" * 128)
 
-        result = self.runner.invoke(cli, ["list-loaders", str(binary)])
+        result = self.runner.invoke(cli, ["--json", "list-loaders", str(binary)])
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert data["ok"] is True
@@ -439,7 +439,7 @@ class TestStopAll:
 
         monkeypatch.setattr(pathlib.Path, "glob", fake_glob)
 
-        result = self.runner.invoke(cli, ["stop", "--all"])
+        result = self.runner.invoke(cli, ["--json", "stop", "--all"])
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert data["ok"] is True
@@ -469,7 +469,7 @@ class TestStopAll:
 
         monkeypatch.setattr(pathlib.Path, "glob", fake_glob)
 
-        result = self.runner.invoke(cli, ["stop", "--all"])
+        result = self.runner.invoke(cli, ["--json", "stop", "--all"])
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         assert data["ok"] is True

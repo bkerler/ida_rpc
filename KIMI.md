@@ -11,4 +11,5 @@ Start with:
 
 Then use `open`, `metadata`, `functions`, `decompile`, `disassemble`,
 `strings`, `xrefs-to`, `xrefs-from`, `rename-function`, `set-comment`, and
-`save`. Every command returns JSON.
+`save`. Commands print human-readable text by default; add `--json` (before the
+subcommand) or set `IDA_RPC_JSON=1` for JSON output.
