@@ -553,7 +553,7 @@ class TestStatus:
                 return {"ok": True, "result": {"binaries": [{
                     "name": "test",
                     "path": "/tmp/test.bin",
-                    "arch": "arm",
+                    "arch": "aarch64",
                     "bits": 64,
                     "endian": "little",
                     "format": "Binary file",
@@ -569,11 +569,11 @@ class TestStatus:
         data = json.loads(result.output)
         assert data["ok"] is True
         assert data["result"]["arch"] == "aarch64"
-        assert data["result"]["processor"] == "arm"
+        assert data["result"]["processor"] == "aarch64"
         assert data["result"]["bits"] == 64
         assert data["result"]["loaded"]["name"] == "test"
-        assert data["result"]["loaded"]["arch"] == "arm"
-        assert data["result"]["binaries"][0]["arch"] == "arm"
+        assert data["result"]["loaded"]["arch"] == "aarch64"
+        assert data["result"]["binaries"][0]["arch"] == "aarch64"
 
 
 class TestListProjects:
@@ -593,7 +593,7 @@ class TestListProjects:
                 "path": "/tmp/sample.i64",
                 "analysis_complete": True,
             },
-            "processor": "ARM",
+            "processor": "aarch64",
             "bits": 64,
             "endian": "little",
             "format": "Binary",
@@ -605,7 +605,7 @@ class TestListProjects:
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)
         project = data["result"]["projects"][0]
-        assert project["arch"] == "ARM"
+        assert project["arch"] == "aarch64"
         assert project["bits"] == 64
         assert project["endian"] == "little"
         assert project["analysis_complete"] is True

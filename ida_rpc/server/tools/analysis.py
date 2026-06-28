@@ -39,6 +39,13 @@ def _filetype_name(ft: int) -> str:
     return mapping.get(ft, f"unknown({ft})")
 
 
+def _arch_name(procname: str, bits: int) -> str:
+    proc = (procname or "").strip()
+    if proc.lower() == "arm" and bits == 64:
+        return "aarch64"
+    return proc
+
+
 def _ida():
     import ida_idaapi
     import ida_loader
@@ -62,11 +69,12 @@ def _ida():
 def _current_binary_info(ctx) -> dict:
     _, _, _, _, _, _, _, ida_ida, _, _, _, _ = _ida()
     pi = ctx.get_program()
+    bits = 64 if ida_ida.inf_is_64bit() else 32
     return {
         "name": pi.name,
         "path": str(pi.idb_path) if pi.idb_path else None,
-        "arch": ida_ida.inf_get_procname(),
-        "bits": 64 if ida_ida.inf_is_64bit() else 32,
+        "arch": _arch_name(ida_ida.inf_get_procname(), bits),
+        "bits": bits,
         "endian": "big" if ida_ida.inf_is_be() else "little",
         "format": _filetype_name(ida_ida.inf_get_filetype()),
         "base_address": f"0x{ida_ida.inf_get_min_ea():x}",
@@ -247,10 +255,11 @@ def _handle_metadata(ctx, args: dict) -> dict:
     for _ in idautils.Functions():
         func_count += 1
 
+    bits = 64 if ida_ida.inf_is_64bit() else 32
     return {
         "name": pi.name,
-        "arch": ida_ida.inf_get_procname(),
-        "bits": 64 if ida_ida.inf_is_64bit() else 32,
+        "arch": _arch_name(ida_ida.inf_get_procname(), bits),
+        "bits": bits,
         "endian": "big" if ida_ida.inf_is_be() else "little",
         "format": _filetype_name(ida_ida.inf_get_filetype()),
         "base_address": f"0x{ida_ida.inf_get_min_ea():x}",
