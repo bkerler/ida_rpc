@@ -52,8 +52,9 @@ If no explicit loader is provided and a new raw import includes `--arch`,
 `daemon.start_background()` adds `-TBinary file` to avoid IDA waiting for loader
 selection.
 
-`--base` is a byte address in the ida-rpc CLI. `cli.start()` converts it to
-IDA's `-b` paragraph units before spawning IDA.
+`--base` is a byte address in the ida-rpc CLI. `cli.start()` passes it to IDA
+only when importing a binary into a new IDB. Existing IDBs are opened as
+databases, so raw import options such as `--base` and `--loader` are ignored.
 
 IDA's AArch64 processor lives in the ARM processor module. The CLI preserves the
 session architecture as `aarch64` / `arm64`, but passes `-parm` to IDA and lets

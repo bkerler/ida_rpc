@@ -67,6 +67,9 @@ ida-rpc open --project /path/to/existing.i64 --arch <arch> --headless --detach
 # The segment is auto-configured (class, bitness, permissions) based on arch.
 ida-rpc open /path/to/raw.bin --arch arm --base 0x8000 --headless --detach
 
+# Existing IDBs ignore raw import options such as --base and --loader.
+# The requested --arch still configures processor/bitness after the IDB opens.
+
 # When opening a system binary (e.g. /usr/bin/ls), specify a writable project path
 ida-rpc open /usr/bin/ls --project /tmp/ls_analysis.i64 --arch x86 --headless --detach
 
@@ -98,7 +101,7 @@ Commands print human-readable text by default. Pass `--json` (before the subcomm
 | `ida-rpc find-project <binary-or-idb>` | Resolve the IDB path, socket path, and recommended start command |
 | `ida-rpc list-loaders [binary] [--ida-install-dir DIR]` | List loader aliases, installed IDA loaders, and file-specific candidates |
 | `ida-rpc open <binary> --arch <arch> [--project <idb>] [--base <addr>] [--headless] [--detach] [--clean]` | Agent-friendly alias for `start` |
-| `ida-rpc start <binary> --arch <arch> [--project <idb>] [--base <addr>] [--headless] [--detach] [--clean]` | Open binary and start daemon |
+| `ida-rpc start <binary> --arch <arch> [--project <idb>] [--base <addr>] [--headless] [--detach] [--clean]` | Open binary and start daemon; `--base` applies when importing a new IDB |
 | `ida-rpc start --project <idb> --arch <arch> [--headless] [--detach] [--clean]` | Open an existing database |
 | `ida-rpc stop --project <idb>` | Stop daemon |
 | `ida-rpc status --project <idb>` | Check daemon health, launch arch, loaded processor/settings, and loaded binary |

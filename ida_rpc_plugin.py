@@ -65,15 +65,6 @@ def _configure_segments_for_arch(arch: str) -> None:
 
     arch_lower = arch.lower().strip()
 
-    if arch_lower in {"aarch64", "arm64"}:
-        ida_idp.set_processor_type("arm", ida_idp.SETPROC_LOADER_NON_FATAL)
-        if idaapi.IDA_SDK_VERSION >= 900:
-            ida_ida.inf_set_32bit(False)
-            ida_ida.inf_set_64bit(True)
-            ida_ida.inf_set_app_bitness(64)
-        else:
-            idaapi.get_inf_structure().lflags |= idaapi.LFLG_64BIT
-
     # Map architecture to (segment_class, bitness)
     # bitness: 0=16-bit, 1=32-bit, 2=64-bit addresses
     config = {
@@ -92,6 +83,21 @@ def _configure_segments_for_arch(arch: str) -> None:
     }
 
     seg_class, bitness = config.get(arch_lower, ("CODE", 1))
+    app_bitness = 64 if bitness == 2 else 32
+
+    if arch_lower in {"arm", "thumb", "aarch64", "arm64"}:
+        ida_idp.set_processor_type("arm", ida_idp.SETPROC_LOADER_NON_FATAL)
+
+    if idaapi.IDA_SDK_VERSION >= 900:
+        ida_ida.inf_set_64bit(bitness == 2)
+        ida_ida.inf_set_32bit(bitness == 1)
+        ida_ida.inf_set_app_bitness(app_bitness)
+    else:
+        inf = idaapi.get_inf_structure()
+        if bitness == 2:
+            inf.lflags |= idaapi.LFLG_64BIT
+        else:
+            inf.lflags &= ~idaapi.LFLG_64BIT
 
     # Apply to all segments (raw binaries typically have one segment)
     for seg_ea in idautils.Segments():

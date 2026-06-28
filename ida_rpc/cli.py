@@ -593,14 +593,16 @@ def start(
         arch=arch,
     )
 
+    imports_binary = bool(binary_path and not idb_path.exists())
+
     # Pass arch/base through to the background launcher
     extra_ida_args = []
     processor_name = _resolve_processor_name(arch)
     extra_ida_args.append(f"-p{processor_name}")
-    if base is not None:
+    if base is not None and imports_binary:
         extra_ida_args.append(f"-b{base:x}")
     loader_name = _resolve_loader_name(loader)
-    if loader_name:
+    if loader_name and imports_binary:
         extra_ida_args.append(f"-T{loader_name}")
 
     from ida_rpc.daemon import has_stale_companions, clean_companion_files
@@ -622,7 +624,7 @@ def start(
             start_background(
                 session,
                 timeout=effective_timeout,
-                binary_path=binary_path if (binary_path and not idb_path.exists()) else None,
+                binary_path=binary_path if imports_binary else None,
                 extra_ida_args=extra_ida_args,
             )
             _output({
@@ -653,7 +655,7 @@ def start(
             start_background(
                 session,
                 timeout=effective_timeout,
-                binary_path=binary_path if (binary_path and not idb_path.exists()) else None,
+                binary_path=binary_path if imports_binary else None,
                 extra_ida_args=extra_ida_args,
             )
             _output({
