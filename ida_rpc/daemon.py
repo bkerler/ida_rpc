@@ -184,9 +184,6 @@ def start_background(
     if session.project_idb.exists():
         cmd.append(str(session.project_idb))
     elif binary_path and binary_path.exists():
-        has_loader = bool(extra_ida_args and any(arg.startswith("-T") for arg in extra_ida_args))
-        if not has_loader and extra_ida_args and any(arg.startswith("-p") for arg in extra_ida_args):
-            cmd.append("-TBinary file")
         # IDA creates the IDB next to the source binary by default.
         # If the binary is in a read-only directory (e.g. /usr/bin),
         # this fails silently. Force output path with -o.

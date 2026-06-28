@@ -48,9 +48,8 @@ combines three data sources:
 
 `start/open --loader` accepts either an alias or the exact IDA loader string.
 Aliases are resolved before command construction and passed to IDA as `-T<loader>`.
-If no explicit loader is provided and a new raw import includes `--arch`,
-`daemon.start_background()` adds `-TBinary file` to avoid IDA waiting for loader
-selection.
+If no explicit loader is provided, IDA chooses the loader from the input file.
+Use `--loader raw` to force raw binary import.
 
 `--base` is a byte address in the ida-rpc CLI. `cli.start()` passes it to IDA
 only when importing a binary into a new IDB. Existing IDBs are opened as
