@@ -40,11 +40,12 @@ CORE_CAPABILITIES = {
     "purpose": "IDA Pro reverse-engineering RPC over a local Unix socket",
     "output": "Automation commands print human-readable text to stdout by default. Use --json for JSON output or set IDA_RPC_JSON=1.",
     "project_option": "--project <idb>; falls back to IDA_RPC_PROJECT",
+    "start_requires": "--arch <arch> is mandatory for start/open so IDA never guesses the processor",
     "agent_workflow": [
         "capabilities",
         "find-project <binary-or-idb>",
-        "open <binary-or-idb> --headless --detach",
-        "metadata --project <idb>",
+        "open <binary-or-idb> --arch <arch> --headless --detach",
+        "status --project <idb>",
         "functions --project <idb> --limit 50",
         "decompile <function-or-address> --project <idb>",
         "rename-function <target> <new_name> --project <idb>",
@@ -287,11 +288,46 @@ def _resolve_loader_name(loader: str | None) -> str | None:
     return LOADER_ALIASES.get(loader.strip().lower(), loader)
 
 
-def _resolve_processor_name(arch: str | None) -> str | None:
-    if not arch:
-        return None
+def _resolve_processor_name(arch: str) -> str:
     normalized = arch.strip().lower()
     return IDA_PROCESSOR_ALIASES.get(normalized, arch)
+
+
+def _recommended_start(target: Path, project: Path, exists: bool) -> str:
+    arch_arg = "--arch <arch>"
+    if exists:
+        return f"ida-rpc open --project {project} {arch_arg} --headless --detach"
+    return f"ida-rpc open {target} --project {project} {arch_arg} --headless --detach"
+
+
+def _live_status(sock: Path) -> dict[str, Any]:
+    from ida_rpc.client import send_request
+
+    info: dict[str, Any] = {"binaries": None, "loaded": None}
+
+    resp = send_request(sock, "list_binaries", {})
+    if resp.get("ok"):
+        binaries = resp["result"].get("binaries", [])
+        info["binaries"] = binaries
+        if binaries:
+            first = binaries[0]
+            info["loaded"] = {
+                key: first.get(key)
+                for key in (
+                    "name", "path", "arch", "bits", "endian", "format",
+                    "base_address", "analysis_complete",
+                )
+                if key in first
+            }
+            info.update({
+                "processor": first.get("arch"),
+                "bits": first.get("bits"),
+                "endian": first.get("endian"),
+                "format": first.get("format"),
+                "base_address": first.get("base_address"),
+            })
+
+    return info
 
 
 def _ida_install_dir(explicit: str | None = None) -> Path | None:
@@ -457,11 +493,7 @@ def find_project(path: str):
                 "exists": session is not None,
                 "mode": session.mode if session else None,
             },
-            "recommended_start": (
-                f"ida-rpc open --project {project} --headless --detach"
-                if exists
-                else f"ida-rpc open {target} --project {project} --headless --detach"
-            ),
+            "recommended_start": _recommended_start(target, project, exists),
         },
     })
 
@@ -494,7 +526,7 @@ def list_loaders(binary: str, ida_install_dir: str | None):
 @cli.command()
 @click.argument("binary", required=False, default="")
 @click.option("--project", "-p", type=str, help="IDB path to create/use (default: <binary>.i64)")
-@click.option("--arch", "-a", type=str, help="Processor type (e.g., arm, aarch64, x86, mips, ppc)")
+@click.option("--arch", "-a", type=str, required=True, help="Processor type (e.g., arm, aarch64, x86, mips, ppc)")
 @click.option("--base", "-b", type=HEX_INT, help="Image base address for raw binaries")
 @click.option("--loader", "-T", type=str, help="IDA loader/file type to force (for example: raw, 'Binary file', miniloader)")
 @click.option("--headless", is_flag=True, help="Start in headless mode (no GUI)")
@@ -515,7 +547,7 @@ def start(
     clean: bool,
 ):
     """Open a binary in IDA and start the RPC daemon."""
-    from ida_rpc.daemon import start_background, start_blocking
+    from ida_rpc.daemon import is_running, start_background, start_blocking
 
     # Binary is optional when opening an existing IDB
     if not binary and not project:
@@ -540,6 +572,12 @@ def start(
 
     mode = "headless" if headless else "gui"
     sock = session_mod.socket_path_for_project(idb_path)
+    if is_running(sock):
+        _error(
+            "AlreadyRunning",
+            f"ida-rpc daemon already running for {idb_path} at {sock}. "
+            "Use 'ida-rpc status' or stop it first.",
+        )
 
     ida_dir_path = None
     if ida_install_dir:
@@ -558,8 +596,7 @@ def start(
     # Pass arch/base through to the background launcher
     extra_ida_args = []
     processor_name = _resolve_processor_name(arch)
-    if processor_name:
-        extra_ida_args.append(f"-p{processor_name}")
+    extra_ida_args.append(f"-p{processor_name}")
     if base is not None:
         extra_ida_args.append(f"-b{base:x}")
     loader_name = _resolve_loader_name(loader)
@@ -635,7 +672,7 @@ def start(
 @cli.command(name="open")
 @click.argument("binary", required=False, default="")
 @click.option("--project", "-p", type=str, help="IDB path to create/use (default: <binary>.i64)")
-@click.option("--arch", "-a", type=str, help="Processor type (e.g., arm, aarch64, x86, mips, ppc)")
+@click.option("--arch", "-a", type=str, required=True, help="Processor type (e.g., arm, aarch64, x86, mips, ppc)")
 @click.option("--base", "-b", type=HEX_INT, help="Image base address for raw binaries")
 @click.option("--loader", "-T", type=str, help="IDA loader/file type to force (for example: raw, 'Binary file', miniloader)")
 @click.option("--headless", is_flag=True, help="Start in headless mode (no GUI)")
@@ -713,7 +750,7 @@ def restart(
         else:
             _error(
                 "NoSession",
-                f"No saved session for {idb}. Use 'ida-rpc start <binary>' first, or pass '--headless'.",
+                f"No saved session for {idb}. Use 'ida-rpc start <binary> --arch <arch>' first, or pass '--headless'.",
             )
 
     if headless:
@@ -746,55 +783,29 @@ def restart(
 @cli.command(name="list")
 def list_projects():
     """List all active ida-rpc projects / daemons."""
-    import socket as sock_mod
-    import uuid
+    from ida_rpc.daemon import is_running
 
     socks = sorted(Path("/tmp").glob("ida-rpc-*.sock"))
     results = []
     for sock in socks:
-        entry = {"socket": str(sock), "running": False}
-        try:
-            s = sock_mod.socket(sock_mod.AF_UNIX, sock_mod.SOCK_STREAM)
-            s.settimeout(2)
-            s.connect(str(sock))
-            request = {"id": str(uuid.uuid4()), "cmd": "ping", "args": {}}
-            s.sendall((json.dumps(request) + "\n").encode())
-            data = b""
-            while b"\n" not in data:
-                chunk = s.recv(4096)
-                if not chunk:
-                    break
-                data += chunk
-            s.close()
-            if data.strip():
-                resp = json.loads(data.decode().strip())
-                entry["running"] = resp.get("ok", False)
-                if entry["running"]:
-                    # Try to get program info
-                    try:
-                        s2 = sock_mod.socket(sock_mod.AF_UNIX, sock_mod.SOCK_STREAM)
-                        s2.settimeout(5)
-                        s2.connect(str(sock))
-                        req2 = {"id": str(uuid.uuid4()), "cmd": "list_binaries", "args": {}}
-                        s2.sendall((json.dumps(req2) + "\n").encode())
-                        buf = b""
-                        while b"\n" not in buf:
-                            chunk = s2.recv(4096)
-                            if not chunk:
-                                break
-                            buf += chunk
-                        s2.close()
-                        if buf.strip():
-                            r2 = json.loads(buf.decode().strip())
-                            if r2.get("ok"):
-                                binaries = r2["result"].get("binaries", [])
-                                if binaries:
-                                    entry["name"] = binaries[0].get("name")
-                                    entry["path"] = binaries[0].get("path")
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+        running = is_running(sock)
+        entry = {"socket": str(sock), "running": running}
+        if running:
+            try:
+                live = _live_status(sock)
+                loaded = live.get("loaded") or {}
+                entry.update({
+                    "name": loaded.get("name"),
+                    "path": loaded.get("path"),
+                    "arch": live.get("processor"),
+                    "bits": live.get("bits"),
+                    "endian": live.get("endian"),
+                    "format": live.get("format"),
+                    "base_address": live.get("base_address"),
+                    "analysis_complete": loaded.get("analysis_complete"),
+                })
+            except Exception:
+                pass
         results.append(entry)
 
     _output({"ok": True, "result": {"projects": results, "count": len(results)}})
@@ -813,13 +824,18 @@ def status(project: str | None):
 
     mode_source = "running" if running else ("session" if session else None)
 
-    binaries = None
+    live = {
+        "binaries": None,
+        "loaded": None,
+        "processor": None,
+        "bits": None,
+        "endian": None,
+        "format": None,
+        "base_address": None,
+    }
     if running:
         try:
-            from ida_rpc.client import send_request
-            resp = send_request(sock, "list_binaries", {})
-            if resp.get("ok"):
-                binaries = resp["result"].get("binaries", [])
+            live.update(_live_status(sock))
         except Exception:
             pass
 
@@ -831,7 +847,8 @@ def status(project: str | None):
             "mode": session.mode if session else None,
             "mode_source": mode_source,
             "project": str(idb),
-            "binaries": binaries,
+            "arch": session.arch if session else None,
+            **live,
         },
     })
 

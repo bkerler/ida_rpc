@@ -8,10 +8,10 @@ Open a terminal and start the daemon. This blocks and shows logs:
 
 ```bash
 # Headless (no GUI) — good for automated analysis
-ida-rpc start /path/to/binary --headless
+ida-rpc start /path/to/binary --arch <arch> --headless
 
 # Or with GUI — opens IDA interactively
-ida-rpc start /path/to/binary
+ida-rpc start /path/to/binary --arch <arch>
 
 # For raw binaries, specify architecture and base address
 ida-rpc start /path/to/raw.bin --arch arm --base 0x8000 --loader raw --headless
@@ -19,13 +19,13 @@ ida-rpc start /path/to/raw.bin --arch arm --base 0x8000 --loader raw --headless
 
 For automation, start in the background (returns once the socket is responsive):
 ```bash
-ida-rpc start /path/to/binary --headless --detach
+ida-rpc start /path/to/binary --arch <arch> --headless --detach
 ```
 
 The `.i64` IDB file will be created next to the binary if it doesn't exist. You can
 override the IDB path with `--project`:
 ```bash
-ida-rpc start /path/to/binary --project /custom/path.i64 --headless --detach
+ida-rpc start /path/to/binary --project /custom/path.i64 --arch <arch> --headless --detach
 ```
 
 When the file type is ambiguous, list available loaders and candidates first:
@@ -35,10 +35,10 @@ ida-rpc list-loaders /path/to/binary
 
 # Force a loader by alias
 ida-rpc start /path/to/raw.bin --arch arm --base 0x8000 --loader raw --headless --detach
-ida-rpc start /path/to/miniloader.bin --loader miniloader --headless --detach
+ida-rpc start /path/to/miniloader.bin --arch arm --loader miniloader --headless --detach
 
 # Or force the exact IDA loader string
-ida-rpc start /path/to/image.itb --loader "Rockchip U-Boot FIT image" --headless --detach
+ida-rpc start /path/to/image.itb --arch arm --loader "Rockchip U-Boot FIT image" --headless --detach
 ```
 
 Common loader aliases:
@@ -62,7 +62,7 @@ All subsequent commands will use this project automatically.
 
 ```bash
 # What architecture?
-ida-rpc metadata
+ida-rpc status
 
 # List functions (use --limit/--offset for large binaries)
 ida-rpc functions

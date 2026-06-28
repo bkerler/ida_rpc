@@ -37,11 +37,26 @@ ida-rpc status --project /path/to/binary.i64
 # Remove it
 rm /tmp/ida-rpc-XXXXXXXX.sock
 # Start again
-ida-rpc start --project /path/to/binary.i64 --headless
+ida-rpc start --project /path/to/binary.i64 --arch <arch> --headless
 ```
 
 The daemon normally cleans up its socket on shutdown, but if it's killed (SIGKILL, power
 loss), the socket file may remain.
+
+## Project Already Running
+
+**Symptom**: `ida-rpc start` fails with `AlreadyRunning`.
+
+**Cause**: The project already has a responsive ida-rpc daemon. `start` refuses
+to launch a second IDA instance for the same IDB/socket.
+
+**Fix**: Reuse the running daemon or stop it first:
+
+```bash
+ida-rpc status --project /path/to/binary.i64
+ida-rpc stop --project /path/to/binary.i64
+ida-rpc start --project /path/to/binary.i64 --arch <arch> --headless --detach
+```
 
 ## Stale Database Files
 
@@ -56,7 +71,7 @@ Check ida.log!
 
 **Fix** — use the `--clean` flag:
 ```bash
-ida-rpc start --project /path/to/binary.i64 --headless --detach --clean
+ida-rpc start --project /path/to/binary.i64 --arch <arch> --headless --detach --clean
 ```
 
 Or manually remove the stale files:
@@ -81,8 +96,8 @@ ida-rpc start raw.bin --arch arm --base 0x8000 --loader raw --headless --detach 
 For custom loaders, use the alias or exact IDA loader string:
 
 ```bash
-ida-rpc start loader.bin --loader miniloader --headless --detach --clean
-ida-rpc start image.itb --loader "Rockchip U-Boot FIT image" --headless --detach --clean
+ida-rpc start loader.bin --arch arm --loader miniloader --headless --detach --clean
+ida-rpc start image.itb --arch arm --loader "Rockchip U-Boot FIT image" --headless --detach --clean
 ```
 
 `--base` is a byte address in the ida-rpc CLI. For example, `--base 0x03000000`
@@ -209,7 +224,7 @@ is more reliable on macOS.
 ## `restart` Fails with "NoSession"
 
 **Symptom**: `ida-rpc restart` fails with
-`"No saved session for /path. Use 'ida-rpc start' first."`
+`"No saved session for /path. Use 'ida-rpc start <binary> --arch <arch>' first."`
 
 **Cause**: `restart` needs a saved session (created by a previous `start`) to know
 which mode (GUI / headless) to use.

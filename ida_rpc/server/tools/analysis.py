@@ -59,6 +59,21 @@ def _ida():
     )
 
 
+def _current_binary_info(ctx) -> dict:
+    _, _, _, _, _, _, _, ida_ida, _, _, _, _ = _ida()
+    pi = ctx.get_program()
+    return {
+        "name": pi.name,
+        "path": str(pi.idb_path) if pi.idb_path else None,
+        "arch": ida_ida.inf_get_procname(),
+        "bits": 64 if ida_ida.inf_is_64bit() else 32,
+        "endian": "big" if ida_ida.inf_is_be() else "little",
+        "format": _filetype_name(ida_ida.inf_get_filetype()),
+        "base_address": f"0x{ida_ida.inf_get_min_ea():x}",
+        "analysis_complete": pi.analysis_complete,
+    }
+
+
 def _handle_load(ctx, args: dict) -> dict:
     """Load a binary into IDA. In IDA context this is typically done by
     opening the IDB; loading a new binary requires launching IDA with it.
@@ -73,24 +88,22 @@ def _handle_load(ctx, args: dict) -> dict:
 
     # IDA loads binaries into the current process; we can't hot-swap.
     # Return info about the current IDB and advise the user.
-    pi = ctx.get_program()
+    info = _current_binary_info(ctx)
     return {
-        "binary": pi.name,
-        "path": str(pi.idb_path) if pi.idb_path else None,
-        "note": "IDA loads binaries at process startup. Use 'ida-rpc start --project <idb>' to open a different file.",
-        "analysis_complete": pi.analysis_complete,
+        "binary": info["name"],
+        "path": info["path"],
+        "arch": info["arch"],
+        "bits": info["bits"],
+        "endian": info["endian"],
+        "format": info["format"],
+        "base_address": info["base_address"],
+        "note": "IDA loads binaries at process startup. Use 'ida-rpc start --project <idb> --arch <arch>' to open a different file.",
+        "analysis_complete": info["analysis_complete"],
     }
 
 
 def _handle_list_binaries(ctx, args: dict) -> dict:
-    pi = ctx.get_program()
-    return {
-        "binaries": [{
-            "name": pi.name,
-            "path": str(pi.idb_path) if pi.idb_path else None,
-            "analysis_complete": pi.analysis_complete,
-        }]
-    }
+    return {"binaries": [_current_binary_info(ctx)]}
 
 
 def _handle_function(ctx, args: dict) -> dict:

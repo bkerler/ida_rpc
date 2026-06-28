@@ -7,6 +7,7 @@ import json
 import pytest
 from click.testing import CliRunner
 
+from ida_rpc import session as session_mod
 from ida_rpc.cli import cli
 
 
@@ -76,9 +77,29 @@ class TestCliStartArgs:
     runner = CliRunner()
 
     def test_start_requires_binary_or_project(self):
-        result = self.runner.invoke(cli, ["start"])
+        result = self.runner.invoke(cli, ["start", "--arch", "arm"])
         assert result.exit_code != 0
         assert "Provide either BINARY or --project" in result.output
+
+    def test_start_requires_arch(self, tmp_path):
+        binary = tmp_path / "sample.bin"
+        binary.write_bytes(b"\x00" * 4)
+
+        result = self.runner.invoke(cli, ["start", str(binary), "--headless", "--detach"])
+
+        assert result.exit_code != 0
+        assert "Missing option" in result.output
+        assert "--arch" in result.output
+
+    def test_open_requires_arch(self, tmp_path):
+        binary = tmp_path / "sample.bin"
+        binary.write_bytes(b"\x00" * 4)
+
+        result = self.runner.invoke(cli, ["open", str(binary), "--headless", "--detach"])
+
+        assert result.exit_code != 0
+        assert "Missing option" in result.output
+        assert "--arch" in result.output
 
     def test_start_accepts_options(self):
         # We can't actually start IDA, but we can verify argument parsing
@@ -88,6 +109,30 @@ class TestCliStartArgs:
         ])
         # Should fail because binary doesn't exist (click.Path validates it)
         assert result.exit_code != 0
+
+    def test_start_fails_if_project_is_already_running(self, tmp_path, monkeypatch):
+        binary = tmp_path / "sample.bin"
+        binary.write_bytes(b"\x00" * 4)
+        project = tmp_path / "sample.i64"
+
+        monkeypatch.setattr("ida_rpc.daemon.is_running", lambda sock: True)
+        monkeypatch.setattr(
+            "ida_rpc.daemon.start_background",
+            lambda *args, **kwargs: pytest.fail("start_background must not be called"),
+        )
+        monkeypatch.setattr(
+            "ida_rpc.daemon.start_blocking",
+            lambda *args, **kwargs: pytest.fail("start_blocking must not be called"),
+        )
+
+        result = self.runner.invoke(cli, [
+            "start", str(binary), "--project", str(project),
+            "--arch", "arm", "--headless", "--detach",
+        ])
+
+        assert result.exit_code != 0
+        assert "AlreadyRunning" in result.output
+        assert str(project) in result.output
 
     def test_start_passes_raw_base_address_to_ida(self, tmp_path, monkeypatch):
         binary = tmp_path / "sample.bin"
@@ -185,6 +230,7 @@ class TestCliAgentDiscovery:
         assert data["ok"] is True
         assert data["result"]["project"] == str(binary.with_suffix(".i64"))
         assert data["result"]["exists"] is False
+        assert "--arch <arch>" in data["result"]["recommended_start"]
 
     def test_list_loaders_for_rockchip_miniloader(self, tmp_path):
         binary = tmp_path / "loader.bin"
@@ -480,6 +526,89 @@ class TestStopAll:
         result = self.runner.invoke(cli, ["stop"])
         assert result.exit_code != 0
         assert "No project specified" in result.output
+
+
+class TestStatus:
+    """Test status combines persisted session settings with live IDA metadata."""
+
+    runner = CliRunner()
+
+    def test_status_reports_arch_and_live_metadata(self, tmp_path, monkeypatch):
+        project = tmp_path / "test.i64"
+        state_dir = tmp_path / "state"
+        monkeypatch.setenv("IDA_RPC_STATE_DIR", str(state_dir))
+
+        session = session_mod.Session(
+            mode="headless",
+            project_idb=project,
+            socket_path=session_mod.socket_path_for_project(project),
+            arch="aarch64",
+        )
+        session_mod.save(session)
+
+        monkeypatch.setattr("ida_rpc.daemon.is_running", lambda sock: True)
+
+        def fake_send_request(sock, cmd, args):
+            if cmd == "list_binaries":
+                return {"ok": True, "result": {"binaries": [{
+                    "name": "test",
+                    "path": "/tmp/test.bin",
+                    "arch": "arm",
+                    "bits": 64,
+                    "endian": "little",
+                    "format": "Binary file",
+                    "base_address": "0x3000000",
+                }]}}
+            raise AssertionError(f"unexpected RPC command: {cmd}")
+
+        monkeypatch.setattr("ida_rpc.client.send_request", fake_send_request)
+
+        result = self.runner.invoke(cli, ["--json", "status", "--project", str(project)])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["result"]["arch"] == "aarch64"
+        assert data["result"]["processor"] == "arm"
+        assert data["result"]["bits"] == 64
+        assert data["result"]["loaded"]["name"] == "test"
+        assert data["result"]["loaded"]["arch"] == "arm"
+        assert data["result"]["binaries"][0]["arch"] == "arm"
+
+
+class TestListProjects:
+    """Test multi-project listing includes loaded architecture/settings."""
+
+    runner = CliRunner()
+
+    def test_list_reports_live_architecture(self, tmp_path, monkeypatch):
+        sock = tmp_path / "ida-rpc-test.sock"
+        sock.write_text("")
+
+        monkeypatch.setattr("pathlib.Path.glob", lambda self, pattern: [sock])
+        monkeypatch.setattr("ida_rpc.daemon.is_running", lambda path: True)
+        monkeypatch.setattr("ida_rpc.cli._live_status", lambda path: {
+            "loaded": {
+                "name": "sample.i64",
+                "path": "/tmp/sample.i64",
+                "analysis_complete": True,
+            },
+            "processor": "ARM",
+            "bits": 64,
+            "endian": "little",
+            "format": "Binary",
+            "base_address": "0x0",
+        })
+
+        result = self.runner.invoke(cli, ["--json", "list"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        project = data["result"]["projects"][0]
+        assert project["arch"] == "ARM"
+        assert project["bits"] == 64
+        assert project["endian"] == "little"
+        assert project["analysis_complete"] is True
 
 
 class TestClearDataRangeArgs:

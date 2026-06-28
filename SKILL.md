@@ -35,20 +35,20 @@ output.
 
 ```bash
 # Open a binary and start the daemon
-ida-rpc open /path/to/binary --headless --detach
+ida-rpc open /path/to/binary --arch <arch> --headless --detach
 
 # Open an existing database (.i64 or .idb)
-ida-rpc open --project /path/to/existing.i64 --headless --detach
+ida-rpc open --project /path/to/existing.i64 --arch <arch> --headless --detach
 
 # For raw binaries, specify architecture and base address
 ida-rpc open /path/to/raw.bin --arch arm --base 0x8000 --loader raw --headless --detach
 
 # For custom loaders, first list candidates, then force the loader if needed
 ida-rpc list-loaders /path/to/loader.bin
-ida-rpc open /path/to/loader.bin --loader miniloader --headless --detach
+ida-rpc open /path/to/loader.bin --arch arm --loader miniloader --headless --detach
 
 # When opening a system binary (e.g. /usr/bin/ls), specify a writable project path
-ida-rpc open /usr/bin/ls --project /tmp/ls_analysis.i64 --headless --detach
+ida-rpc open /usr/bin/ls --project /tmp/ls_analysis.i64 --arch x86 --headless --detach
 ```
 
 ### 3. Set the default project
@@ -128,14 +128,14 @@ ida-rpc stop
 | `capabilities` | | Print agent-discoverable command capabilities |
 | `find-project <binary-or-idb>` | | Resolve IDB path, socket path, session state, and recommended start command |
 | `list-loaders [binary] [--ida-install-dir DIR]` | | List loader aliases, installed IDA loaders, and file-specific candidates |
-| `open <binary-or-idb> [--project <idb>] [--loader <name>] [--headless] [--detach]` | | Agent-friendly alias for `start` |
-| `start <binary> [--project <idb>] [--arch <arch>] [--base <addr>] [--loader <name>] [--headless] [--detach] [--clean]` | | Open binary and start daemon |
-| `start --project <idb> [--headless] [--detach] [--clean]` | | Open an existing database |
+| `open <binary-or-idb> --arch <arch> [--project <idb>] [--loader <name>] [--headless] [--detach]` | | Agent-friendly alias for `start` |
+| `start <binary> --arch <arch> [--project <idb>] [--base <addr>] [--loader <name>] [--headless] [--detach] [--clean]` | | Open binary and start daemon |
+| `start --project <idb> --arch <arch> [--headless] [--detach] [--clean]` | | Open an existing database |
 | `stop --project <idb>` | | Stop daemon |
-| `status --project <idb>` | | Check health + list loaded binaries |
+| `status --project <idb>` | | Check health, launch arch, loaded processor/settings, and loaded binary |
 | `restart --project <idb> [--headless] [--clean]` | | Restart daemon |
 | `list` | | List all active projects/daemons |
-| `list-binaries --project <idb>` | | List binaries loaded in the current IDB |
+| `list-binaries --project <idb>` | | List loaded binaries with arch, bits, endian, format, and base address |
 
 Loader aliases accepted by `--loader` include:
 
@@ -390,7 +390,7 @@ ida-rpc functions --limit 20
 **Important notes on architecture selection:**
 
 - **`thumb` vs `arm`:** For 32-bit ARM firmware that is primarily Thumb code (common in Cortex-M/MCU binaries), use `--arch thumb`. This sets the segment class to `CODE16`, which tells IDA to disassemble in Thumb mode by default. If you later encounter ARM-mode functions, use `set-processor-context` to switch the T-bit (see Pattern 5).
-- For raw binaries, IDA may default to 64-bit addressing even for 32-bit processors. Passing `--arch` auto-configures the segment with the correct bitness and class. If you did not pass `--arch`, manually set bitness with `edit-segment --bitness 1` before creating functions.
+- For raw binaries, IDA may default to 64-bit addressing even for 32-bit processors. `--arch` is mandatory and auto-configures the segment with the correct bitness and class.
 
 **Segment class values:** `CODE`, `DATA`, `CONST`, `BSS`, `STACK`, `HEAP`, `XTRN`.
 
@@ -456,8 +456,8 @@ Parse with `jq .result` to extract the payload, or check `.ok` first.
 
 | Symptom | Fix |
 |---------|-----|
-| `DaemonNotRunning` | Run `ida-rpc start <binary> --headless --detach` |
-| Socket exists but daemon unresponsive | `ida-rpc stop` then `ida-rpc start` |
+| `DaemonNotRunning` | Run `ida-rpc start <binary> --arch <arch> --headless --detach` |
+| Socket exists but daemon unresponsive | `ida-rpc stop` then `ida-rpc start <binary> --arch <arch>` |
 | Hex-Rays errors | Ensure Hex-Rays decompiler is installed and licensed |
 | `Function can be called from the main thread only` | Internal bug — handler forgot `ctx.run_on_main_thread()` |
 | Changes lost after stop | Forgot `ida-rpc save` — mutations are auto-saved by most handlers, but explicit save is safest |

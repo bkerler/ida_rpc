@@ -57,17 +57,17 @@ ida-rpc find-project /path/to/binary-or-existing.i64
 
 ```bash
 # Start headless daemon from a binary
-ida-rpc open /path/to/binary --headless --detach
+ida-rpc open /path/to/binary --arch <arch> --headless --detach
 
 # Or open an existing IDB
-ida-rpc open --project /path/to/existing.i64 --headless --detach
+ida-rpc open --project /path/to/existing.i64 --arch <arch> --headless --detach
 
 # For raw binaries, specify architecture and base address.
 # The segment is auto-configured (class, bitness, permissions) based on arch.
 ida-rpc open /path/to/raw.bin --arch arm --base 0x8000 --headless --detach
 
 # When opening a system binary (e.g. /usr/bin/ls), specify a writable project path
-ida-rpc open /usr/bin/ls --project /tmp/ls_analysis.i64 --headless --detach
+ida-rpc open /usr/bin/ls --project /tmp/ls_analysis.i64 --arch x86 --headless --detach
 
 # Set default project for subsequent commands
 export IDA_RPC_PROJECT=/path/to/binary.i64
@@ -95,14 +95,14 @@ Commands print human-readable text by default. Pass `--json` (before the subcomm
 |---------|-------------|
 | `ida-rpc capabilities` | Print agent-discoverable command capabilities |
 | `ida-rpc find-project <binary-or-idb>` | Resolve the IDB path, socket path, and recommended start command |
-| `ida-rpc open <binary> [--project <idb>] [--arch <arch>] [--base <addr>] [--headless] [--detach] [--clean]` | Agent-friendly alias for `start` |
-| `ida-rpc start <binary> [--project <idb>] [--arch <arch>] [--base <addr>] [--headless] [--detach] [--clean]` | Open binary and start daemon |
-| `ida-rpc start --project <idb> [--headless] [--detach] [--clean]` | Open an existing database |
+| `ida-rpc open <binary> --arch <arch> [--project <idb>] [--base <addr>] [--headless] [--detach] [--clean]` | Agent-friendly alias for `start` |
+| `ida-rpc start <binary> --arch <arch> [--project <idb>] [--base <addr>] [--headless] [--detach] [--clean]` | Open binary and start daemon |
+| `ida-rpc start --project <idb> --arch <arch> [--headless] [--detach] [--clean]` | Open an existing database |
 | `ida-rpc stop --project <idb>` | Stop daemon |
-| `ida-rpc status --project <idb>` | Check daemon health + list loaded binaries |
+| `ida-rpc status --project <idb>` | Check daemon health, launch arch, loaded processor/settings, and loaded binary |
 | `ida-rpc restart --project <idb> [--headless] [--clean]` | Restart daemon |
 | `ida-rpc list` | List all active projects/daemons |
-| `ida-rpc list-binaries --project <idb>` | List binaries loaded in the current IDB |
+| `ida-rpc list-binaries --project <idb>` | List loaded binaries with arch, bits, endian, format, and base address |
 | `ida-rpc save --project <idb>` | Save the database |
 
 ### Analysis & Listing

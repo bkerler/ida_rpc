@@ -4,14 +4,14 @@
 
 ```bash
 # Open binary in IDA and start daemon
-ida-rpc start /path/to/binary --headless --detach
+ida-rpc start /path/to/binary --arch <arch> --headless --detach
 
 # Or if IDB already exists:
-ida-rpc start /path/to/binary --project /path/to/existing.i64 --headless --detach
+ida-rpc start /path/to/binary --project /path/to/existing.i64 --arch <arch> --headless --detach
 
 export IDA_RPC_PROJECT=/path/to/binary.i64
 
-ida-rpc metadata          # arch, bits, format, compiler
+ida-rpc status            # daemon, arch, bits, endian, format, base
 ida-rpc imports           # external dependencies / capabilities
 ida-rpc exports           # relevant for shared libraries
 ida-rpc strings "<term>"  # run with several terms: http, error, password, key, /

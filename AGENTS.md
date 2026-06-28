@@ -18,9 +18,10 @@ ida-rpc list-loaders <binary>
 Then use:
 
 ```bash
-ida-rpc open <binary-or-idb> --headless --detach
+ida-rpc open <binary-or-idb> --arch <arch> --headless --detach
 ida-rpc open <raw.bin> --arch arm --base 0x8000 --loader raw --headless --detach
-ida-rpc open <loader.bin> --loader miniloader --headless --detach
+ida-rpc open <loader.bin> --arch arm --loader miniloader --headless --detach
+ida-rpc status --project <idb>
 ida-rpc metadata --project <idb>
 ida-rpc functions --project <idb> --limit 50
 ida-rpc decompile <function-or-address> --project <idb>
@@ -113,8 +114,8 @@ Force a loader with `start/open --loader` or `-T`:
 
 ```bash
 ida-rpc open firmware.bin --arch arm --base 0x8000 --loader raw --headless --detach
-ida-rpc open loader.bin --loader miniloader --headless --detach
-ida-rpc open image.itb --loader "Rockchip U-Boot FIT image" --headless --detach
+ida-rpc open loader.bin --arch arm --loader miniloader --headless --detach
+ida-rpc open image.itb --arch arm --loader "Rockchip U-Boot FIT image" --headless --detach
 ```
 
 Known aliases:
@@ -180,7 +181,7 @@ def my_command(something: str, project: str | None):
 6. **Test it:**
 
 ```bash
-ida-rpc start --project /tmp/test.i64 --headless --detach
+ida-rpc start --project /tmp/test.i64 --arch arm --headless --detach
 ida-rpc my-command some_value
 ```
 
@@ -305,7 +306,7 @@ The plugin keeps IDA alive with a sleep loop after the server starts.
 
 ### Raw Binary Auto-Configuration
 
-When `--arch` is passed to `ida-rpc start`, the plugin auto-configures segments before auto-analysis:
+`--arch` is mandatory for `ida-rpc start/open`. The plugin uses it to auto-configure segments before auto-analysis:
 
 | Arch | Segment class | Bitness | Perms |
 |------|--------------|---------|-------|
@@ -352,7 +353,7 @@ After adding or changing a command:
 
 1. Reinstall: `pip install -e .`
 2. Run unit tests: `pytest tests/ -v`
-3. Start headless daemon: `ida-rpc start --project /tmp/test.i64 --headless --detach`
+3. Start headless daemon: `ida-rpc start --project /tmp/test.i64 --arch arm --headless --detach`
 4. Run the command via CLI and verify JSON output
 5. Check `ida-rpc status --project /tmp/test.i64`
 6. Stop: `ida-rpc stop --project /tmp/test.i64` (or `ida-rpc stop --all` to close every open project at once)

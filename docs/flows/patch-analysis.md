@@ -7,10 +7,10 @@ security patches, update diffs, or understanding version differences.
 
 ```bash
 # Create IDB for old version
-ida-rpc start /path/to/binary_v1 --headless --detach
+ida-rpc start /path/to/binary_v1 --arch <arch> --headless --detach
 
 # Create IDB for new version
-ida-rpc start /path/to/binary_v2 --headless --detach
+ida-rpc start /path/to/binary_v2 --arch <arch> --headless --detach
 ```
 
 ## Step 2: Start Daemons for Both
