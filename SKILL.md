@@ -201,6 +201,18 @@ Loader aliases accepted by `--loader` include:
 | `batch-rename --from-file <json>` | | Bulk rename functions/symbols |
 | `batch-set-comment --from-file <json>` | | Bulk set comments |
 
+### Lumina
+
+Lumina commands use the primary or secondary Lumina server configured in IDA
+(`Options > General > Lumina`) or overridden for the IDA session with
+`-Olumina:...` / `-Osecondary_lumina:...`. Credentials are not returned.
+
+| Command | Args | Description |
+|---------|------|-------------|
+| `lumina-config [--secondary]` | | Report Lumina configuration source and whether a configured client is available |
+| `lumina-pull-signatures [target] [--all] [--apply/--no-apply] [--force] [--seen-file] [--secondary]` | | Pull function signatures/metadata from Lumina |
+| `lumina-push-signatures [target] [--all] [--mode better\|override\|no-override\|merge] [--min-func-size N] [--secondary]` | | Push function signatures/metadata to Lumina |
+
 ### Data Types
 
 | Command | Args | Description |
