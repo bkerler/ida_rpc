@@ -179,6 +179,29 @@ class TestCliStartArgs:
         assert result.exit_code == 0, result.output
         assert captured["extra_ida_args"] == ["-parm", "-b3000000", "-TBinary file"]
 
+    def test_start_maps_x86_arch_to_ida_metapc_processor(self, tmp_path, monkeypatch):
+        binary = tmp_path / "sample.exe"
+        binary.write_bytes(b"MZ\x00\x00")
+        project = tmp_path / "sample.i64"
+        captured = {}
+
+        def fake_start_background(session, timeout, *, binary_path=None, extra_ida_args=None):
+            captured["session"] = session
+            captured["binary_path"] = binary_path
+            captured["extra_ida_args"] = extra_ida_args
+
+        monkeypatch.setattr("ida_rpc.daemon.start_background", fake_start_background)
+
+        result = self.runner.invoke(cli, [
+            "start", str(binary), "--project", str(project),
+            "--arch", "x86", "--headless", "--detach",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert captured["session"].arch == "x86"
+        assert captured["binary_path"] == binary
+        assert captured["extra_ida_args"] == ["-pmetapc"]
+
     def test_start_ignores_raw_import_options_for_existing_idb(self, tmp_path, monkeypatch):
         binary = tmp_path / "sample.bin"
         binary.write_bytes(b"\x00" * 4)

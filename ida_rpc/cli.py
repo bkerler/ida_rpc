@@ -150,6 +150,14 @@ LOADER_ALIASES = {
 IDA_PROCESSOR_ALIASES = {
     "aarch64": "arm",
     "arm64": "arm",
+    "x86": "metapc",
+    "i386": "metapc",
+    "i486": "metapc",
+    "i586": "metapc",
+    "i686": "metapc",
+    "x64": "metapc",
+    "x86_64": "metapc",
+    "amd64": "metapc",
 }
 
 
