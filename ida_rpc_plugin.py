@@ -1,5 +1,5 @@
 # (c) B. Kerler 2026, MIT license
-"""IDA Pro plugin entry point for ida-rpc.
+r"""IDA Pro plugin entry point for ida-rpc.
 
 Install this file into IDA's plugins directory for GUI mode auto-load.
 Default locations:
@@ -69,23 +69,49 @@ def _configure_segments_for_arch(arch: str) -> None:
     # bitness: 0=16-bit, 1=32-bit, 2=64-bit addresses
     config = {
         "arm": ("CODE32", 1),
+        "armv7": ("CODE32", 1),
+        "armv7-a": ("CODE32", 1),
+        "armv7-m": ("CODE32", 1),
+        "armv7m": ("CODE32", 1),
         "thumb": ("CODE16", 1),
+        "thumb2": ("CODE16", 1),
         "aarch64": ("CODE64", 2),
         "arm64": ("CODE64", 2),
+        "armv8": ("CODE64", 2),
+        "armv8-a": ("CODE64", 2),
         "metapc": ("CODE", 1),   # x86 32-bit default
         "x86": ("CODE", 1),
+        "i386": ("CODE", 1),
+        "i486": ("CODE", 1),
+        "i586": ("CODE", 1),
+        "i686": ("CODE", 1),
         "x64": ("CODE64", 2),
+        "x86_64": ("CODE64", 2),
+        "x86-64": ("CODE64", 2),
+        "amd64": ("CODE64", 2),
         "mips": ("CODE", 1),
+        "mipsel": ("CODE", 1),
         "mipsb": ("CODE", 1),
         "mips64": ("CODE64", 2),
+        "mips64el": ("CODE64", 2),
+        "mips64eb": ("CODE64", 2),
         "ppc": ("CODE", 1),
+        "powerpc": ("CODE", 1),
         "ppc64": ("CODE64", 2),
+        "powerpc64": ("CODE64", 2),
+        "riscv": ("CODE", 1),
+        "risc-v": ("CODE", 1),
+        "riscv32": ("CODE", 1),
+        "riscv64": ("CODE64", 2),
     }
 
     seg_class, bitness = config.get(arch_lower, ("CODE", 1))
     app_bitness = 64 if bitness == 2 else 32
 
-    if arch_lower in {"arm", "thumb", "aarch64", "arm64"}:
+    if arch_lower in {
+        "arm", "armv7", "armv7-a", "armv7-m", "armv7m",
+        "thumb", "thumb2", "aarch64", "arm64", "armv8", "armv8-a",
+    }:
         ida_idp.set_processor_type("arm", ida_idp.SETPROC_LOADER_NON_FATAL)
 
     if idaapi.IDA_SDK_VERSION >= 900:
