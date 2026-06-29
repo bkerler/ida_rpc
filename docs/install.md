@@ -85,7 +85,7 @@ ln -s /path/to/ida-rpc/ida_rpc_plugin.py $(IDA_INSTALL_DIR)/plugins/ida_rpc_plug
 
 ```bash
 ida-rpc --version
-# Should print: ida-rpc, version 0.1.3
+# Should print: ida-rpc, version 0.1.4
 ```
 
 ## What Gets Installed
