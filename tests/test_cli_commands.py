@@ -64,6 +64,7 @@ class TestCliCommandsExist:
         "import-til", "export-til", "delete-type", "get-type-info",
         "operand-struct-path", "set-color", "get-color", "del-color",
         "list-try-blocks",
+        "lumina-config", "lumina-pull-signatures", "lumina-push-signatures",
     ])
     def test_command_help(self, cmd: str):
         result = self.runner.invoke(cli, [cmd, "--help"])
@@ -177,6 +178,29 @@ class TestCliStartArgs:
 
         assert result.exit_code == 0, result.output
         assert captured["extra_ida_args"] == ["-parm", "-b3000000", "-TBinary file"]
+
+    def test_start_maps_x86_arch_to_ida_metapc_processor(self, tmp_path, monkeypatch):
+        binary = tmp_path / "sample.exe"
+        binary.write_bytes(b"MZ\x00\x00")
+        project = tmp_path / "sample.i64"
+        captured = {}
+
+        def fake_start_background(session, timeout, *, binary_path=None, extra_ida_args=None):
+            captured["session"] = session
+            captured["binary_path"] = binary_path
+            captured["extra_ida_args"] = extra_ida_args
+
+        monkeypatch.setattr("ida_rpc.daemon.start_background", fake_start_background)
+
+        result = self.runner.invoke(cli, [
+            "start", str(binary), "--project", str(project),
+            "--arch", "x86", "--headless", "--detach",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert captured["session"].arch == "x86"
+        assert captured["binary_path"] == binary
+        assert captured["extra_ida_args"] == ["-pmetapc"]
 
     def test_start_ignores_raw_import_options_for_existing_idb(self, tmp_path, monkeypatch):
         binary = tmp_path / "sample.bin"
@@ -356,6 +380,9 @@ class TestCliRpcCommands:
         ("get-color", ["0x1000"], "get_color", {"address"}),
         ("del-color", ["0x1000"], "del_color", {"address"}),
         ("list-try-blocks", [], "list_try_blocks", set()),
+        ("lumina-config", [], "lumina_config", {"secondary"}),
+        ("lumina-pull-signatures", ["main"], "lumina_pull_signatures", {"target", "all", "apply", "force", "seen_file", "secondary"}),
+        ("lumina-push-signatures", ["main"], "lumina_push_signatures", {"target", "all", "mode", "min_func_size", "secondary"}),
         ("xrefs-to", ["main"], "xrefs_to", {"target", "limit"}),
         ("xrefs-from", ["main"], "xrefs_from", {"target", "limit", "no_stack"}),
         ("goto", ["main"], "goto", {"target", "target_type"}),

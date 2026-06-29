@@ -150,6 +150,14 @@ LOADER_ALIASES = {
 IDA_PROCESSOR_ALIASES = {
     "aarch64": "arm",
     "arm64": "arm",
+    "x86": "metapc",
+    "i386": "metapc",
+    "i486": "metapc",
+    "i586": "metapc",
+    "i686": "metapc",
+    "x64": "metapc",
+    "x86_64": "metapc",
+    "amd64": "metapc",
 }
 
 
@@ -2326,6 +2334,55 @@ def list_tags(project: str | None):
 def functions_by_tag(tag: str, limit: int, project: str | None):
     """Find functions by tag."""
     _rpc_command(_resolve_project(project), "functions_by_tag", {"tag": tag, "limit": limit})
+
+
+@cli.command(name="lumina-config")
+@click.option("--secondary", is_flag=True, help="Inspect secondary Lumina settings.")
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def lumina_config(secondary: bool, project: str | None):
+    """Read Lumina configuration source information from IDA."""
+    _rpc_command(_resolve_project(project), "lumina_config", {"secondary": secondary})
+
+
+@cli.command(name="lumina-pull-signatures")
+@click.argument("target", required=False)
+@click.option("--all", "all_functions", is_flag=True, help="Pull signatures for all functions.")
+@click.option("--apply/--no-apply", "apply_md", default=True, help="Apply pulled metadata to the IDB.")
+@click.option("--force", is_flag=True, help="Force-apply returned metadata after pulling.")
+@click.option("--seen-file", is_flag=True, help="Do not increment Lumina frequency counters.")
+@click.option("--secondary", is_flag=True, help="Use the secondary Lumina server.")
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def lumina_pull_signatures(target: str | None, all_functions: bool, apply_md: bool,
+                           force: bool, seen_file: bool, secondary: bool,
+                           project: str | None):
+    """Pull function signatures from the configured Lumina server."""
+    _rpc_command(_resolve_project(project), "lumina_pull_signatures", {
+        "target": target or "",
+        "all": all_functions,
+        "apply": apply_md,
+        "force": force,
+        "seen_file": seen_file,
+        "secondary": secondary,
+    })
+
+
+@cli.command(name="lumina-push-signatures")
+@click.argument("target", required=False)
+@click.option("--all", "all_functions", is_flag=True, help="Push signatures for all functions.")
+@click.option("--mode", type=click.Choice(["better", "override", "no-override", "merge"]), default="better")
+@click.option("--min-func-size", type=int, default=0)
+@click.option("--secondary", is_flag=True, help="Use the secondary Lumina server.")
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def lumina_push_signatures(target: str | None, all_functions: bool, mode: str,
+                           min_func_size: int, secondary: bool, project: str | None):
+    """Push function signatures to the configured Lumina server."""
+    _rpc_command(_resolve_project(project), "lumina_push_signatures", {
+        "target": target or "",
+        "all": all_functions,
+        "mode": mode,
+        "min_func_size": min_func_size,
+        "secondary": secondary,
+    })
 
 
 # ---------------------------------------------------------------------------

@@ -33,3 +33,4 @@ def register_all_tools():
     from ida_rpc.server.tools import operand_info
     from ida_rpc.server.tools import colors
     from ida_rpc.server.tools import exceptions
+    from ida_rpc.server.tools import lumina
