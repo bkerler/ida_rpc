@@ -83,6 +83,8 @@ _EXPECTED_HANDLERS = {
     "set_color", "get_color", "del_color",
     # Exceptions
     "list_try_blocks",
+    # Lumina
+    "lumina_config", "lumina_pull_signatures", "lumina_push_signatures",
 }
 
 

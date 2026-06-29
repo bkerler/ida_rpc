@@ -64,6 +64,7 @@ class TestCliCommandsExist:
         "import-til", "export-til", "delete-type", "get-type-info",
         "operand-struct-path", "set-color", "get-color", "del-color",
         "list-try-blocks",
+        "lumina-config", "lumina-pull-signatures", "lumina-push-signatures",
     ])
     def test_command_help(self, cmd: str):
         result = self.runner.invoke(cli, [cmd, "--help"])
@@ -356,6 +357,9 @@ class TestCliRpcCommands:
         ("get-color", ["0x1000"], "get_color", {"address"}),
         ("del-color", ["0x1000"], "del_color", {"address"}),
         ("list-try-blocks", [], "list_try_blocks", set()),
+        ("lumina-config", [], "lumina_config", {"secondary"}),
+        ("lumina-pull-signatures", ["main"], "lumina_pull_signatures", {"target", "all", "apply", "force", "seen_file", "secondary"}),
+        ("lumina-push-signatures", ["main"], "lumina_push_signatures", {"target", "all", "mode", "min_func_size", "secondary"}),
         ("xrefs-to", ["main"], "xrefs_to", {"target", "limit"}),
         ("xrefs-from", ["main"], "xrefs_from", {"target", "limit", "no_stack"}),
         ("goto", ["main"], "goto", {"target", "target_type"}),
