@@ -155,6 +155,30 @@ def _handle_decompile_lvars(ctx, args: dict) -> dict:
     if cfunc is None:
         raise RuntimeError("Decompilation failed")
 
+    def lvar_type(lv):
+        typ = getattr(lv, "type", None)
+        if callable(typ):
+            try:
+                typ = typ()
+            except Exception:
+                typ = None
+        return typ
+
+    def lvar_size(lv):
+        size = getattr(lv, "size", None)
+        if size is not None:
+            return size
+        width = getattr(lv, "width", None)
+        if width is not None:
+            return width
+        typ = lvar_type(lv)
+        if typ:
+            try:
+                return typ.get_size()
+            except Exception:
+                pass
+        return None
+
     lvars = []
     for lv in cfunc.get_lvars():
         loc_str = "unknown"
@@ -167,8 +191,8 @@ def _handle_decompile_lvars(ctx, args: dict) -> dict:
 
         lvars.append({
             "name": lv.name or "",
-            "type": str(lv.type) if lv.type else "",
-            "size": lv.size,
+            "type": str(lvar_type(lv) or ""),
+            "size": lvar_size(lv),
             "is_arg": lv.is_arg_var,
             "location": loc_str,
         })
@@ -218,6 +242,15 @@ def _handle_set_lvar_name(ctx, args: dict) -> dict:
             return True
 
     def do_modify():
+        if hasattr(ida_hexrays, "rename_lvar"):
+            renamed = ida_hexrays.rename_lvar(func_ea, lvar_name, new_name)
+            if renamed:
+                return {
+                    "address": f"0x{func_ea:x}",
+                    "lvar": lvar_name,
+                    "new_name": new_name,
+                    "changed": True,
+                }
         modifier = _Modifier(lvar_name, new_name)
         ida_hexrays.modify_user_lvars(func_ea, modifier)
         return {
