@@ -33,12 +33,26 @@ def _handle_add_segment(ctx, args: dict) -> dict:
             arch_lower = arch.lower().strip()
             config = {
                 "arm": "CODE32",
+                "armv7": "CODE32",
+                "armv7-a": "CODE32",
+                "armv7-m": "CODE32",
+                "armv7m": "CODE32",
                 "thumb": "CODE16",
+                "thumb2": "CODE16",
                 "aarch64": "CODE64",
                 "arm64": "CODE64",
+                "armv8": "CODE64",
+                "armv8-a": "CODE64",
                 "x64": "CODE64",
+                "x86_64": "CODE64",
+                "x86-64": "CODE64",
+                "amd64": "CODE64",
                 "mips64": "CODE64",
+                "mips64el": "CODE64",
+                "mips64eb": "CODE64",
                 "ppc64": "CODE64",
+                "powerpc64": "CODE64",
+                "riscv64": "CODE64",
             }
             sclass = config.get(arch_lower, "CODE")
         else:
@@ -69,8 +83,15 @@ def _handle_add_segment(ctx, args: dict) -> dict:
         if arch:
             arch_lower = arch.lower().strip()
             bitness_map = {
-                "aarch64": 2, "arm64": 2, "x64": 2, "mips64": 2, "ppc64": 2,
-                "arm": 1, "thumb": 1, "metapc": 1, "x86": 1, "mips": 1, "mipsb": 1, "ppc": 1,
+                "aarch64": 2, "arm64": 2, "armv8": 2, "armv8-a": 2,
+                "x64": 2, "x86_64": 2, "x86-64": 2, "amd64": 2,
+                "mips64": 2, "mips64el": 2, "mips64eb": 2,
+                "ppc64": 2, "powerpc64": 2, "riscv64": 2,
+                "arm": 1, "armv7": 1, "armv7-a": 1, "armv7-m": 1, "armv7m": 1,
+                "thumb": 1, "thumb2": 1, "metapc": 1, "x86": 1,
+                "i386": 1, "i486": 1, "i586": 1, "i686": 1,
+                "mips": 1, "mipsel": 1, "mipsb": 1, "mipseb": 1,
+                "ppc": 1, "powerpc": 1, "riscv": 1, "risc-v": 1, "riscv32": 1,
             }
             bitness = bitness_map.get(arch_lower, 1)
             ida_segment.set_segm_addressing(seg, bitness)
