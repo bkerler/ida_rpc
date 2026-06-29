@@ -213,5 +213,8 @@ change, so your edits survive restarts.
   survive daemon restarts and are visible when you reopen the database in IDA GUI.
 - **Signature semicolons**: Trailing `;` is stripped automatically — you can paste
   C prototypes verbatim.
+- **Lumina signatures**: `lumina-pull-signatures` and `lumina-push-signatures`
+  use IDA's configured Lumina server. Use `lumina-config` to check whether IDA
+  has a primary or secondary Lumina client configured; credentials are not shown.
 - **List active projects**: `ida-rpc list` shows all running daemons and their sockets.
 - **Assembler dependency**: `assemble` requires Keystone Engine (`pip install keystone-engine`).
