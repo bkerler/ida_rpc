@@ -115,8 +115,10 @@ def _configure_segments_for_arch(arch: str) -> None:
         ida_idp.set_processor_type("arm", ida_idp.SETPROC_LOADER_NON_FATAL)
 
     if idaapi.IDA_SDK_VERSION >= 900:
-        ida_ida.inf_set_64bit(bitness == 2)
-        ida_ida.inf_set_32bit(bitness == 1)
+        if bitness == 2:
+            ida_ida.inf_set_64bit(True)
+        elif bitness == 1:
+            ida_ida.inf_set_32bit(True)
         ida_ida.inf_set_app_bitness(app_bitness)
     else:
         inf = idaapi.get_inf_structure()
