@@ -327,7 +327,7 @@ def _resolve_processor_name(arch: str) -> str:
 def _recommended_start(target: Path, project: Path, exists: bool) -> str:
     arch_arg = "--arch <arch>"
     if exists:
-        return f"ida-rpc open --project {project} {arch_arg} --headless --detach"
+        return f"ida-rpc open --project {project} --headless --detach"
     return f"ida-rpc open {target} --project {project} {arch_arg} --headless --detach"
 
 
@@ -557,7 +557,7 @@ def list_loaders(binary: str, ida_install_dir: str | None):
 @cli.command()
 @click.argument("binary", required=False, default="")
 @click.option("--project", "-p", type=str, help="IDB path to create/use (default: <binary>.i64)")
-@click.option("--arch", "-a", type=str, required=True, help="Processor type (e.g., arm, aarch64, x86, mips, ppc)")
+@click.option("--arch", "-a", type=str, help="Processor type (e.g., arm, aarch64, x86, mips, ppc)")
 @click.option("--base", "-b", type=HEX_INT, help="Image base address for raw binaries")
 @click.option("--loader", "-T", type=str, help="IDA loader/file type to force (for example: raw, 'Binary file', miniloader)")
 @click.option("--headless", is_flag=True, help="Start in headless mode (no GUI)")
@@ -578,7 +578,7 @@ def start(
     clean: bool,
 ):
     """Open a binary in IDA and start the RPC daemon."""
-    from ida_rpc.daemon import is_running, start_background, start_blocking
+    from ida_rpc.daemon import is_running, start_background
 
     # Binary is optional when opening an existing IDB
     if not binary and not project:
@@ -625,11 +625,14 @@ def start(
     )
 
     imports_binary = bool(binary_path and not idb_path.exists())
+    if imports_binary and not arch:
+        _error("MissingParameter", "--arch is required when importing a new binary")
 
     # Pass arch/base through to the background launcher
     extra_ida_args = []
-    processor_name = _resolve_processor_name(arch)
-    extra_ida_args.append(f"-p{processor_name}")
+    if arch:
+        processor_name = _resolve_processor_name(arch)
+        extra_ida_args.append(f"-p{processor_name}")
     if base is not None and imports_binary:
         extra_ida_args.append(f"-b{base:x}")
     loader_name = _resolve_loader_name(loader)
@@ -681,31 +684,28 @@ def start(
             click.echo(f"  Binary: {binary_path}", err=True)
         click.echo(f"  Project: {idb_path}", err=True)
         click.echo(f"  Socket:  {sock}", err=True)
-        if binary_path:
-            effective_timeout = timeout if timeout is not None else (60.0 if mode == "headless" else 180.0)
-            start_background(
-                session,
-                timeout=effective_timeout,
-                binary_path=binary_path if imports_binary else None,
-                extra_ida_args=extra_ida_args,
-            )
-            _output({
-                "ok": True,
-                "result": {
-                    "status": "started",
-                    "mode": mode,
-                    "project": str(idb_path),
-                    "socket": str(sock),
-                },
-            })
-        else:
-            start_blocking(session)
+        effective_timeout = timeout if timeout is not None else (60.0 if mode == "headless" else 180.0)
+        start_background(
+            session,
+            timeout=effective_timeout,
+            binary_path=binary_path if imports_binary else None,
+            extra_ida_args=extra_ida_args,
+        )
+        _output({
+            "ok": True,
+            "result": {
+                "status": "started",
+                "mode": mode,
+                "project": str(idb_path),
+                "socket": str(sock),
+            },
+        })
 
 
 @cli.command(name="open")
 @click.argument("binary", required=False, default="")
 @click.option("--project", "-p", type=str, help="IDB path to create/use (default: <binary>.i64)")
-@click.option("--arch", "-a", type=str, required=True, help="Processor type (e.g., arm, aarch64, x86, mips, ppc)")
+@click.option("--arch", "-a", type=str, help="Processor type (e.g., arm, aarch64, x86, mips, ppc)")
 @click.option("--base", "-b", type=HEX_INT, help="Image base address for raw binaries")
 @click.option("--loader", "-T", type=str, help="IDA loader/file type to force (for example: raw, 'Binary file', miniloader)")
 @click.option("--headless", is_flag=True, help="Start in headless mode (no GUI)")

@@ -107,8 +107,8 @@ class TestCliStartArgs:
         result = self.runner.invoke(cli, ["start", str(binary), "--headless", "--detach"])
 
         assert result.exit_code != 0
-        assert "Missing option" in result.output
-        assert "--arch" in result.output
+        assert "MissingParameter" in result.output
+        assert "--arch is required when importing a new binary" in result.output
 
     def test_open_requires_arch(self, tmp_path):
         binary = tmp_path / "sample.bin"
@@ -117,8 +117,29 @@ class TestCliStartArgs:
         result = self.runner.invoke(cli, ["open", str(binary), "--headless", "--detach"])
 
         assert result.exit_code != 0
-        assert "Missing option" in result.output
-        assert "--arch" in result.output
+        assert "MissingParameter" in result.output
+        assert "--arch is required when importing a new binary" in result.output
+
+    def test_start_existing_project_does_not_require_arch(self, tmp_path, monkeypatch):
+        project = tmp_path / "sample.i64"
+        project.write_bytes(b"existing idb")
+        captured = {}
+
+        def fake_start_background(session, timeout, *, binary_path=None, extra_ida_args=None):
+            captured["session"] = session
+            captured["binary_path"] = binary_path
+            captured["extra_ida_args"] = extra_ida_args
+
+        monkeypatch.setattr("ida_rpc.daemon.start_background", fake_start_background)
+
+        result = self.runner.invoke(cli, [
+            "start", "--project", str(project), "--headless", "--detach",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert captured["session"].arch is None
+        assert captured["binary_path"] is None
+        assert captured["extra_ida_args"] == []
 
     def test_start_accepts_options(self):
         # We can't actually start IDA, but we can verify argument parsing
@@ -270,6 +291,33 @@ class TestCliStartArgs:
         assert captured["binary_path"] == binary
         assert captured["extra_ida_args"] == ["-parm", "-b3000000"]
 
+    def test_start_without_detach_launches_ida_for_existing_project(self, tmp_path, monkeypatch):
+        project = tmp_path / "sample.i64"
+        project.write_bytes(b"existing idb")
+        captured = {}
+
+        def fake_start_background(session, timeout, *, binary_path=None, extra_ida_args=None):
+            captured["session"] = session
+            captured["timeout"] = timeout
+            captured["binary_path"] = binary_path
+            captured["extra_ida_args"] = extra_ida_args
+
+        def fake_start_blocking(session):
+            raise AssertionError("existing project startup must launch IDA, not run a local non-IDA server")
+
+        monkeypatch.setattr("ida_rpc.daemon.start_background", fake_start_background)
+        monkeypatch.setattr("ida_rpc.daemon.start_blocking", fake_start_blocking)
+
+        result = self.runner.invoke(cli, [
+            "start", "--project", str(project), "--headless",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert captured["session"].arch is None
+        assert captured["binary_path"] is None
+        assert captured["extra_ida_args"] == []
+
+
 
 class TestCliAgentDiscovery:
     """Test commands intended for automated agent discovery."""
@@ -295,6 +343,17 @@ class TestCliAgentDiscovery:
         assert data["result"]["project"] == str(binary.with_suffix(".i64"))
         assert data["result"]["exists"] is False
         assert "--arch <arch>" in data["result"]["recommended_start"]
+
+    def test_find_project_existing_idb_recommended_start_omits_arch(self, tmp_path):
+        project = tmp_path / "sample.i64"
+        project.write_bytes(b"existing idb")
+
+        result = self.runner.invoke(cli, ["--json", "find-project", str(project)])
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["result"]["exists"] is True
+        assert "--arch" not in data["result"]["recommended_start"]
 
     def test_list_loaders_for_rockchip_miniloader(self, tmp_path):
         binary = tmp_path / "loader.bin"
