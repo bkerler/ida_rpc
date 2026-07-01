@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from ida_rpc.client import DaemonError, DaemonNotRunning, send_request
+from ida_rpc.client import DaemonError, DaemonNotRunning, send_request, send_request_with_auto_restart
 from ida_rpc.client import (
     _DEFAULT_SOCKET_TIMEOUT,
     _SOCKET_TIMEOUT_BUFFER,
@@ -121,6 +121,68 @@ class TestDeriveSocketTimeout:
         # A decompile --timeout 5 should still give a reasonable socket window.
         result = _derive_socket_timeout({"timeout": 5})
         assert result == 5 + _SOCKET_TIMEOUT_BUFFER
+
+
+class TestAutoRestart:
+    """Regression tests for command-driven daemon startup."""
+
+    def test_existing_project_without_session_does_not_require_arch(self, tmp_path, monkeypatch):
+        project = tmp_path / "sample.i64"
+        project.write_bytes(b"existing idb")
+        captured = {}
+
+        def fake_send_request(sock_path, cmd, args=None, *, socket_timeout=None):
+            if "started" not in captured:
+                captured["started"] = False
+                raise DaemonNotRunning("missing")
+            return {"ok": True, "result": {"cmd": cmd}}
+
+        def fake_start_background(session):
+            captured["session"] = session
+            captured["started"] = True
+
+        monkeypatch.setattr("ida_rpc.client.send_request", fake_send_request)
+        monkeypatch.setattr("ida_rpc.daemon.start_background", fake_start_background)
+
+        result = send_request_with_auto_restart(project, "metadata", {})
+
+        assert result["ok"] is True
+        assert captured["session"].project_idb == project.resolve()
+        assert captured["session"].arch is None
+        assert captured["session"].mode == "headless"
+
+    def test_existing_project_restart_error_omits_arch(self, tmp_path, monkeypatch):
+        project = tmp_path / "sample.i64"
+        project.write_bytes(b"existing idb")
+
+        def fake_send_request(sock_path, cmd, args=None, *, socket_timeout=None):
+            raise DaemonNotRunning("missing")
+
+        def fake_start_background(session):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr("ida_rpc.client.send_request", fake_send_request)
+        monkeypatch.setattr("ida_rpc.daemon.start_background", fake_start_background)
+
+        with pytest.raises(DaemonNotRunning) as exc:
+            send_request_with_auto_restart(project, "metadata", {})
+
+        message = str(exc.value)
+        assert f"ida-rpc start --project {project.resolve()}" in message
+        assert "--arch" not in message
+
+    def test_missing_project_still_requires_arch(self, tmp_path, monkeypatch):
+        project = tmp_path / "sample.i64"
+
+        def fake_send_request(sock_path, cmd, args=None, *, socket_timeout=None):
+            raise DaemonNotRunning("missing")
+
+        monkeypatch.setattr("ida_rpc.client.send_request", fake_send_request)
+
+        with pytest.raises(DaemonNotRunning) as exc:
+            send_request_with_auto_restart(project, "metadata", {})
+
+        assert "--arch <arch>" in str(exc.value)
 
 
 class TestSession:

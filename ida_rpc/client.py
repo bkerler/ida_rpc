@@ -137,15 +137,25 @@ def send_request_with_auto_restart(
 
     session = session_mod.load(project_idb)
     if session is None:
-        raise DaemonNotRunning(
-            f"Daemon not running. Start it with: ida-rpc start --project {project_idb} --arch <arch>"
+        project_idb = Path(project_idb).resolve()
+        if not project_idb.exists():
+            raise DaemonNotRunning(
+                f"Daemon not running. Start it with: ida-rpc start --project {project_idb} --arch <arch>"
+            )
+        session = session_mod.Session(
+            mode="headless",
+            project_idb=project_idb,
+            socket_path=sock_path,
         )
 
     try:
         daemon_mod.start_background(session)
     except Exception:
+        restart_cmd = f"ida-rpc start --project {project_idb}"
+        if not Path(project_idb).exists():
+            restart_cmd += " --arch <arch>"
         raise DaemonNotRunning(
-            f"Failed to restart daemon. Please run: ida-rpc start --project {project_idb} --arch <arch>"
+            f"Failed to restart daemon. Please run: {restart_cmd}"
         )
 
     return send_request(
