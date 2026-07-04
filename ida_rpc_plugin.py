@@ -28,6 +28,21 @@ _PROJECT_ROOT = os.path.dirname(_IDA_RPC_DIR)
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+
+def _drop_stale_ida_rpc_modules() -> None:
+    """Prefer this checkout when an auto-loaded plugin imported another copy."""
+    expected = os.path.join(_IDA_RPC_DIR, "ida_rpc")
+    loaded = sys.modules.get("ida_rpc")
+    loaded_file = os.path.realpath(getattr(loaded, "__file__", "")) if loaded else ""
+    if not loaded_file or loaded_file.startswith(expected):
+        return
+    for name in list(sys.modules):
+        if name == "ida_rpc" or name.startswith("ida_rpc."):
+            del sys.modules[name]
+
+
+_drop_stale_ida_rpc_modules()
+
 import ida_idaapi
 import ida_loader
 import ida_auto
@@ -60,6 +75,9 @@ def _configure_segments_for_arch(arch: str) -> None:
     import ida_idp
     import idaapi
     import ida_segment
+    import ida_segregs
+    import ida_typeinf
+    import ida_bytes
     import idautils
     import idc
 
@@ -144,6 +162,23 @@ def _configure_segments_for_arch(arch: str) -> None:
                 ida_segment.set_default_sreg_value(seg, "T", 0)
             except Exception:
                 pass
+        elif arch_lower in {"mips", "mipsel", "mipsl", "mipsb"}:
+            try:
+                if ida_bytes.get_bytes(seg.start_ea, 2) == b"\xc0\x60":
+                    ida_typeinf.set_abi_name("n32")
+                    try:
+                        ida_idp.process_config_directive("MIPS_ENCODING=nanoMIPS", 3)
+                    except Exception:
+                        pass
+                    try:
+                        ida_idp.processor_t.set_proc_options("encoding=nanomips", ida_idp.SETPROC_LOADER_NON_FATAL)
+                    except AttributeError:
+                        ida_idp.set_processor_type("mipsl:encoding=nanomips", ida_idp.SETPROC_LOADER_NON_FATAL)
+                    mips16 = ida_idp.str2sreg("mips16")
+                    if mips16 >= 0:
+                        ida_segregs.split_sreg_range(seg.start_ea, mips16, 1, ida_segregs.SR_user)
+            except Exception:
+                pass
 
         # Set read + execute permissions for code segments
         perm = ida_segment.SEGPERM_READ | ida_segment.SEGPERM_EXEC
@@ -208,8 +243,10 @@ class IdaRpcPlugin(ida_idaapi.plugin_t):
         if arch:
             _configure_segments_for_arch(arch)
 
-        # Wait for auto-analysis after raw import mode/bitness is corrected.
-        ida_auto.auto_wait()
+        # In headless mode, expose RPC before long auto-analysis completes so
+        # agents can inspect and steer large raw firmware databases.
+        if mode != "headless":
+            ida_auto.auto_wait()
 
         ctx = IdaContext(self.session)
 

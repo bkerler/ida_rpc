@@ -262,12 +262,14 @@ def _handle_create_function(ctx, args: dict) -> dict:
 
     _ = args.get("binary", "")
     address_str = args.get("address", "")
+    end_str = args.get("end", "")
     name = args.get("name", "")
 
     if not address_str:
         raise ValueError("Missing required argument: address")
 
     addr = ctx.resolve_address(address_str)
+    requested_end = ctx.resolve_address(end_str) if end_str else None
 
     def do_create():
         existing = ida_funcs.get_func(addr)
@@ -280,9 +282,12 @@ def _handle_create_function(ctx, args: dict) -> dict:
             import ida_ua
             ida_ua.create_insn(addr)
 
-        end = addr + 1
-        while ida_funcs.get_func(end) is None and end < addr + 0x10000:
-            end += 1
+        if requested_end is not None:
+            end = requested_end
+        else:
+            end = addr + 1
+            while ida_funcs.get_func(end) is None and end < addr + 0x10000:
+                end += 1
 
         success = ida_funcs.add_func(addr, end)
         if not success:
@@ -591,6 +596,62 @@ def _handle_create_instruction(ctx, args: dict) -> dict:
     return result
 
 
+def _handle_create_instructions(ctx, args: dict) -> dict:
+    _ = args.get("binary", "")
+    start_str = args.get("start", "") or args.get("address", "")
+    end_str = args.get("end", "")
+    max_count = int(args.get("max_count", 4096))
+
+    if not start_str:
+        raise ValueError("Missing required argument: start")
+    if not end_str:
+        raise ValueError("Missing required argument: end")
+
+    start = ctx.resolve_address(start_str)
+    end = ctx.resolve_address(end_str)
+    if end <= start:
+        raise ValueError("end must be greater than start")
+
+    def do_create_range():
+        import ida_bytes
+        import ida_ua
+
+        ea = start
+        count = 0
+        created = []
+        failures = []
+        while ea < end and count < max_count:
+            flags = ida_bytes.get_flags(ea)
+            if ida_bytes.is_code(flags):
+                size = ida_bytes.get_item_size(ea)
+                if size <= 0:
+                    size = 1
+            else:
+                size = ida_ua.create_insn(ea)
+                if size == 0:
+                    failures.append(f"0x{ea:x}")
+                    ea += 1
+                    continue
+                created.append({"address": f"0x{ea:x}", "size": size})
+            ea += size
+            count += 1
+
+        return {
+            "start": f"0x{start:x}",
+            "end": f"0x{end:x}",
+            "next": f"0x{ea:x}",
+            "created_count": len(created),
+            "walked_count": count,
+            "failures": failures[:64],
+            "failure_count": len(failures),
+            "truncated": ea < end,
+        }
+
+    result = ctx.run_on_main_thread(do_create_range)
+    ctx.save()
+    return result
+
+
 def _handle_undefine(ctx, args: dict) -> dict:
     _ = args.get("binary", "")
     address_str = args.get("address", "")
@@ -627,4 +688,5 @@ register_handler("set_calling_convention", _handle_set_calling_convention)
 register_handler("batch_rename", _handle_batch_rename)
 register_handler("batch_set_comment", _handle_batch_set_comment)
 register_handler("create_instruction", _handle_create_instruction)
+register_handler("create_instructions", _handle_create_instructions)
 register_handler("undefine", _handle_undefine)

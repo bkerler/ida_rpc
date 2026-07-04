@@ -1577,7 +1577,7 @@ def rename_symbol(address: str, new_name: str, create: bool, project: str | None
 def create_label(address: str, name: str, project: str | None):
     """Create or rename a label."""
     _rpc_command(_resolve_project(project), "create_label", {
-        "address": address, "name": name,
+        "address": address, "new_name": name,
     })
 
 
@@ -1618,12 +1618,15 @@ def set_data_type(address: str, data_type: str, project: str | None):
 @cli.command(name="create-function")
 @click.argument("address")
 @click.option("--name", "-n", default="")
+@click.option("--end", default="")
 @click.option("--project", "-p", type=str, help="Path to IDB file")
-def create_function(address: str, name: str, project: str | None):
+def create_function(address: str, name: str, end: str, project: str | None):
     """Create a function at an address."""
     args: dict = {"address": address}
     if name:
         args["name"] = name
+    if end:
+        args["end"] = end
     _rpc_command(_resolve_project(project), "create_function", args)
 
 
@@ -1641,6 +1644,20 @@ def delete_function(target: str, project: str | None):
 def create_instruction(address: str, project: str | None):
     """Mark bytes at address as an instruction."""
     _rpc_command(_resolve_project(project), "create_instruction", {"address": address})
+
+
+@cli.command(name="create-instructions")
+@click.argument("start")
+@click.argument("end")
+@click.option("--max-count", type=int, default=4096, show_default=True)
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def create_instructions(start: str, end: str, max_count: int, project: str | None):
+    """Mark bytes in a range as sequential instructions."""
+    _rpc_command(
+        _resolve_project(project),
+        "create_instructions",
+        {"start": start, "end": end, "max_count": max_count},
+    )
 
 
 @cli.command(name="undefine")
@@ -2243,6 +2260,120 @@ def set_processor_context(address: str, register: str, value: int, end: str, pro
     if end:
         args["end"] = end
     _rpc_command(_resolve_project(project), "set_processor_context", args)
+
+
+@cli.command(name="get-abi-name")
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def get_abi_name(project: str | None):
+    """Read the active ABI name."""
+    _rpc_command(_resolve_project(project), "get_abi_name", {})
+
+
+@cli.command(name="set-abi-name")
+@click.argument("abi")
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def set_abi_name(abi: str, project: str | None):
+    """Set the active ABI name."""
+    _rpc_command(_resolve_project(project), "set_abi_name", {"abi": abi})
+
+
+@cli.command(name="set-processor-options")
+@click.argument("options")
+@click.option(
+    "--confidence",
+    default="user",
+    show_default=True,
+    help="Processor option confidence: user, loader, loader-non-fatal, or idb",
+)
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def set_processor_options(options: str, confidence: str, project: str | None):
+    """Set processor-specific command-line options, e.g. encoding=nanomips."""
+    _rpc_command(
+        _resolve_project(project),
+        "set_processor_options",
+        {"options": options, "confidence": confidence},
+    )
+
+
+@cli.command(name="set-idp-option")
+@click.argument("keyword")
+@click.argument("value")
+@click.option("--value-type", default="str", show_default=True)
+@click.option("--idb-loaded/--not-idb-loaded", default=True, show_default=True)
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def set_idp_option(
+    keyword: str,
+    value: str,
+    value_type: str,
+    idb_loaded: bool,
+    project: str | None,
+):
+    """Set one processor-specific IDP option by keyword."""
+    _rpc_command(
+        _resolve_project(project),
+        "set_idp_option",
+        {
+            "keyword": keyword,
+            "value": value,
+            "value_type": value_type,
+            "idb_loaded": idb_loaded,
+        },
+    )
+
+
+@cli.command(name="process-config-directive")
+@click.argument("directive")
+@click.option("--priority", type=int, default=2, show_default=True)
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def process_config_directive(directive: str, priority: int, project: str | None):
+    """Process one IDA config directive, e.g. MIPS_ENCODING=nanoMIPS."""
+    _rpc_command(
+        _resolve_project(project),
+        "process_config_directive",
+        {"directive": directive, "priority": priority},
+    )
+
+
+@cli.command(name="registry-read")
+@click.argument("name")
+@click.option("--subkey", default="")
+@click.option("--value-type", default="str", show_default=True)
+@click.option("--default", default="")
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def registry_read(
+    name: str,
+    subkey: str,
+    value_type: str,
+    default: str,
+    project: str | None,
+):
+    """Read an IDA registry value."""
+    args = {"name": name, "value_type": value_type}
+    if subkey:
+        args["subkey"] = subkey
+    if default:
+        args["default"] = default
+    _rpc_command(_resolve_project(project), "registry_read", args)
+
+
+@cli.command(name="registry-write")
+@click.argument("name")
+@click.argument("value")
+@click.option("--subkey", default="")
+@click.option("--value-type", default="str", show_default=True)
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def registry_write(
+    name: str,
+    value: str,
+    subkey: str,
+    value_type: str,
+    project: str | None,
+):
+    """Write an IDA registry value."""
+    args = {"name": name, "value": value, "value_type": value_type}
+    if subkey:
+        args["subkey"] = subkey
+    _rpc_command(_resolve_project(project), "registry_write", args)
 
 
 @cli.command(name="operand-struct-path")
