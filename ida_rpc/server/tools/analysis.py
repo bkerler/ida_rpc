@@ -256,13 +256,19 @@ def _handle_metadata(ctx, args: dict) -> dict:
         func_count += 1
 
     bits = 64 if ida_ida.inf_is_64bit() else 32
+    base_ea = ida_ida.inf_get_min_ea()
+    for seg_ea in idautils.Segments():
+        seg = ida_segment.getseg(seg_ea)
+        if seg and (seg.perm & ida_segment.SEGPERM_EXEC):
+            base_ea = seg.start_ea
+            break
     return {
         "name": pi.name,
         "arch": _arch_name(ida_ida.inf_get_procname(), bits),
         "bits": bits,
         "endian": "big" if ida_ida.inf_is_be() else "little",
         "format": _filetype_name(ida_ida.inf_get_filetype()),
-        "base_address": f"0x{ida_ida.inf_get_min_ea():x}",
+        "base_address": f"0x{base_ea:x}",
         "num_functions": func_count,
     }
 
