@@ -49,10 +49,12 @@ def _handle_rename_function(ctx, args: dict) -> dict:
 
 def _handle_rename_symbol(ctx, args: dict) -> dict:
     ida_name, _, _, _, ida_idaapi, _, _ = _ida()
+    import ida_segment
+    import idc
 
     _ = args.get("binary", "")
     address = args.get("address", "")
-    new_name = args.get("new_name", "")
+    new_name = args.get("new_name", "") or args.get("name", "")
     create = bool(args.get("create", False))
 
     if not address:
@@ -64,18 +66,46 @@ def _handle_rename_symbol(ctx, args: dict) -> dict:
     old_name = ida_name.get_name(addr)
 
     def do_rename():
+        created_segment = None
+        if ida_segment.getseg(addr) is None:
+            seg_start = addr & ~0xFFF
+            seg_end = seg_start + 0x1000
+            seg_name = f"ram_{seg_start:x}"
+            if not ida_segment.add_segm(0, seg_start, seg_end, seg_name, "DATA", 0):
+                raise RuntimeError(
+                    f"Address 0x{addr:x} is unmapped and failed to create segment "
+                    f"0x{seg_start:x}-0x{seg_end:x}"
+                )
+            seg = ida_segment.getseg(addr)
+            if seg is None:
+                raise RuntimeError(f"Created segment for 0x{addr:x}, but IDA did not return it")
+            ida_segment.set_segm_addressing(seg, 1)
+            idc.set_segm_attr(seg_start, idc.SEGATTR_PERM, ida_segment.SEGPERM_READ | ida_segment.SEGPERM_WRITE)
+            created_segment = {
+                "name": ida_segment.get_segm_name(seg) or seg_name,
+                "start": f"0x{seg.start_ea:x}",
+                "end": f"0x{seg.end_ea:x}",
+            }
+
         if old_name is None and not create:
             raise ValueError(f"No symbol found at address {address}")
         flags = ida_name.SN_CHECK
-        ida_name.set_name(addr, new_name, flags)
+        if not ida_name.set_name(addr, new_name, flags):
+            actual = ida_name.get_name(addr) or ""
+            raise RuntimeError(
+                f"IDA refused to name 0x{addr:x} as {new_name!r}; current name is {actual!r}"
+            )
         actual = ida_name.get_name(addr)
-        return {
+        result = {
             "address": f"0x{addr:x}",
             "old_name": old_name,
             "new_name": actual,
             "created": old_name is None,
             "verified": actual == new_name,
         }
+        if created_segment:
+            result["created_segment"] = created_segment
+        return result
 
     result = ctx.run_on_main_thread(do_rename)
     ctx.save()
@@ -155,12 +185,27 @@ def _handle_set_function_signature(ctx, args: dict) -> dict:
         raise ValueError("Missing required argument: signature")
 
     func_ea = ctx.find_function(target)
+    signature = signature.strip()
+    if not signature.endswith(";"):
+        signature += ";"
     old_sig = ""
     old_tif_str = idc.get_type(func_ea)
     if old_tif_str:
         old_sig = old_tif_str
 
     def do_set():
+        # idc.SetType accepts ordinary C function declarations such as
+        # "int foo(void *ctx);" more reliably than parse_decl(PT_TYP) on some
+        # processor modules, including nanoMIPS firmware databases.
+        if idc.SetType(func_ea, signature):
+            new_sig = idc.get_type(func_ea) or ""
+            return {
+                "address": f"0x{func_ea:x}",
+                "old_signature": old_sig,
+                "new_signature": new_sig,
+                "verified": bool(new_sig) and new_sig != old_sig,
+            }
+
         tif = ida_typeinf.tinfo_t()
         if not ida_typeinf.parse_decl(tif, None, signature, ida_typeinf.PT_TYP):
             # Try with cdecl calling convention

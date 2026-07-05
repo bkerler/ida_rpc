@@ -1577,7 +1577,7 @@ def rename_symbol(address: str, new_name: str, create: bool, project: str | None
 def create_label(address: str, name: str, project: str | None):
     """Create or rename a label."""
     _rpc_command(_resolve_project(project), "create_label", {
-        "address": address, "new_name": name,
+        "address": address, "name": name,
     })
 
 
