@@ -889,9 +889,14 @@ def status(project: str | None):
 @cli.command()
 @click.option("--project", "-p", type=str, help="Path to IDB file")
 @click.option("--all", "stop_all", is_flag=True, help="Stop all running ida-rpc daemons")
-def stop(project: str | None, stop_all: bool):
+@click.option(
+    "--clean/--no-clean",
+    default=True,
+    help="Remove IDA companion files for the stopped project",
+)
+def stop(project: str | None, stop_all: bool, clean: bool):
     """Stop the daemon for a project, or all daemons with --all."""
-    from ida_rpc.daemon import stop_daemon
+    from ida_rpc.daemon import clean_companion_files, stop_daemon
 
     if stop_all:
         socks = sorted(Path("/tmp").glob("ida-rpc-*.sock"))
@@ -921,11 +926,28 @@ def stop(project: str | None, stop_all: bool):
 
     idb = _resolve_project(project)
     sock = session_mod.socket_path_for_project(idb)
+    stopped = stop_daemon(sock)
+    removed = clean_companion_files(idb) if clean else []
 
-    if stop_daemon(sock):
-        _output({"ok": True, "result": {"status": "stopped"}})
+    if stopped:
+        _output({
+            "ok": True,
+            "result": {
+                "status": "stopped",
+                "cleaned": removed,
+            },
+        })
     else:
-        _error("NotRunning", "Daemon is not running.")
+        if clean:
+            _output({
+                "ok": True,
+                "result": {
+                    "status": "not_running",
+                    "cleaned": removed,
+                },
+            })
+        else:
+            _error("NotRunning", "Daemon is not running.")
 
 
 # ---------------------------------------------------------------------------

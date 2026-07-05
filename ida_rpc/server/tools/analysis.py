@@ -46,6 +46,19 @@ def _arch_name(procname: str, bits: int) -> str:
     return proc
 
 
+def _image_base() -> int:
+    import ida_ida
+    import ida_segment
+    import idautils
+
+    base_ea = ida_ida.inf_get_min_ea()
+    for seg_ea in idautils.Segments():
+        seg = ida_segment.getseg(seg_ea)
+        if seg and (seg.perm & ida_segment.SEGPERM_EXEC):
+            return seg.start_ea
+    return base_ea
+
+
 def _ida():
     import ida_idaapi
     import ida_loader
@@ -77,7 +90,7 @@ def _current_binary_info(ctx) -> dict:
         "bits": bits,
         "endian": "big" if ida_ida.inf_is_be() else "little",
         "format": _filetype_name(ida_ida.inf_get_filetype()),
-        "base_address": f"0x{ida_ida.inf_get_min_ea():x}",
+        "base_address": f"0x{_image_base():x}",
         "analysis_complete": pi.analysis_complete,
     }
 
@@ -246,7 +259,7 @@ def _handle_exports(ctx, args: dict) -> dict:
 
 
 def _handle_metadata(ctx, args: dict) -> dict:
-    ida_idaapi, _, _, _, _, _, idautils, ida_ida, ida_segment, _, _, _ = _ida()
+    ida_idaapi, _, _, _, _, _, idautils, ida_ida, _, _, _, _ = _ida()
 
     pi = ctx.get_program()
 
@@ -256,12 +269,7 @@ def _handle_metadata(ctx, args: dict) -> dict:
         func_count += 1
 
     bits = 64 if ida_ida.inf_is_64bit() else 32
-    base_ea = ida_ida.inf_get_min_ea()
-    for seg_ea in idautils.Segments():
-        seg = ida_segment.getseg(seg_ea)
-        if seg and (seg.perm & ida_segment.SEGPERM_EXEC):
-            base_ea = seg.start_ea
-            break
+    base_ea = _image_base()
     return {
         "name": pi.name,
         "arch": _arch_name(ida_ida.inf_get_procname(), bits),

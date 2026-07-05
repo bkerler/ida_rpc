@@ -580,6 +580,28 @@ class TestStopAll:
 
     runner = CliRunner()
 
+    def test_stop_project_cleans_companions_when_not_running(self, tmp_path, monkeypatch):
+        idb = tmp_path / "sample.i64"
+        idb.write_text("idb")
+        companion = tmp_path / "sample.id0"
+        companion.write_text("stale")
+
+        def fake_stop_daemon(sock):
+            return False
+
+        monkeypatch.setattr("ida_rpc.daemon.stop_daemon", fake_stop_daemon)
+
+        result = self.runner.invoke(
+            cli,
+            ["--json", "stop", "--project", str(idb)],
+        )
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["result"]["status"] == "not_running"
+        assert data["result"]["cleaned"] == [str(companion)]
+        assert not companion.exists()
+
     def test_stop_all_finds_and_stops_sockets(self, tmp_path, monkeypatch):
         stopped = []
 
