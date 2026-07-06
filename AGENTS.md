@@ -77,7 +77,7 @@ RPC queries should always be run outside the sandbox.
 | `segments.py` | `add_segment`, `edit_segment`, `delete_segment`, `list_segments` |
 | `xrefs.py` | `xrefs_to`, `xrefs_from` |
 | `navigation.py` | `goto` (GUI only) |
-| `modifications.py` | `rename_function`, `rename_symbol`, `create_label`, `set_comment`, `set_function_signature`, `set_data_type`, `create_function`, `delete_function`, `create_instruction`, `undefine`, `set_thunk`, `set_calling_convention`, `batch_rename`, `batch_set_comment` |
+| `modifications.py` | `rename_function`, `rename_symbol`, `create_label`, `set_comment`, `set_function_signature`, `set_data_type`, `create_function`, `delete_function`, `create_instruction`, `undefine`, `set_thunk`, `set_calling_convention`, `batch_rename`, `batch_set_comment`, `batch` |
 | `data_types.py` | `create_struct`, `create_union`, `create_enum`, `list_data_types`, `list_labels`, `modify_struct`, `modify_enum`, `clear_data_range`, `apply_data_type_range`, `set_equate`, `list_equates` |
 | `bookmarks.py` | `set_bookmark`, `list_bookmarks`, `remove_bookmark` |
 | `cfg.py` | `basic_blocks` |

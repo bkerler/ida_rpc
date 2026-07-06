@@ -118,6 +118,7 @@ CORE_CAPABILITIES = {
             "undefine",
             "batch-rename",
             "batch-set-comment",
+            "batch",
         ],
         "types": [
             "create-struct",
@@ -1748,6 +1749,27 @@ def batch_set_comment(from_file: str | None, project: str | None):
     _rpc_command(_resolve_project(project), "batch_set_comment", {
         "operations": operations,
     })
+
+
+@cli.command(name="batch")
+@click.option("--from-file", "from_file", type=click.Path(exists=True), required=True, help="JSON file with commands array")
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def batch_cmd(from_file: str, project: str | None):
+    """Execute multiple RPC commands from a JSON file in one batch.
+
+    The JSON file may be either a list of command objects or an object with a
+    "commands" key:
+
+    \b
+        [
+          {"cmd": "rename_function", "args": {"target": "sub_1000", "new_name": "foo"}},
+          {"cmd": "set_comment", "args": {"address": "0x1000", "comment": "note"}}
+        ]
+    """
+    with open(from_file) as f:
+        data = json.load(f)
+    commands = data if isinstance(data, list) else data.get("commands", [])
+    _rpc_command(_resolve_project(project), "batch", {"commands": commands})
 
 
 # ---------------------------------------------------------------------------

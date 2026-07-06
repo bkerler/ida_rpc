@@ -22,8 +22,8 @@ _EXPECTED_HANDLERS = {
     "rename_function", "rename_symbol", "create_label",
     "set_comment", "set_function_signature", "set_data_type",
     "create_function", "delete_function", "set_thunk",
-    "set_calling_convention", "batch_rename", "batch_set_comment",
-    "create_instruction", "undefine",
+    "set_calling_convention", "batch_rename", "batch_set_comment", "batch",
+    "create_instruction", "create_instructions", "undefine",
     # Memory
     "read_bytes", "write_bytes", "read_string", "create_string",
     "memory_map", "list_segments",
@@ -47,6 +47,9 @@ _EXPECTED_HANDLERS = {
     "add_segment", "edit_segment", "delete_segment",
     # Processor
     "get_processor_context", "set_processor_context",
+    "get_abi_name", "set_abi_name", "set_processor_options",
+    "set_idp_option", "process_config_directive",
+    "registry_read", "registry_write",
     # Namespaces
     "create_namespace", "list_namespaces",
     # Function details

@@ -65,6 +65,11 @@ class TestProtocol:
 
         server_main.register_handler("echo", echo_handler)
 
+        # Reload modifications so the batch handler is registered in the clean registry
+        from ida_rpc.server.tools import modifications
+        import importlib
+        importlib.reload(modifications)
+
         self.sock_path = tmp_path / "test.sock"
         from ida_rpc.session import Session
         session = Session(mode="headless", project_idb=tmp_path / "test.i64", socket_path=self.sock_path)
@@ -143,3 +148,29 @@ class TestProtocol:
         s.close()
         resp = json.loads(buf.decode().strip())
         assert resp["id"] == req_id
+
+    def test_batch_handler(self):
+        resp = _send_request(self.sock_path, "batch", {
+            "commands": [
+                {"cmd": "echo", "args": {"hello": "world"}},
+                {"cmd": "nonexistent_cmd", "args": {}},
+                {"cmd": "batch", "args": {"commands": []}},
+            ],
+        })
+        assert resp["ok"] is True
+        result = resp["result"]
+        assert result["count"] == 3
+        assert result["ok_count"] == 1
+        assert result["error_count"] == 2
+
+        assert result["results"][0]["ok"] is True
+        assert result["results"][0]["cmd"] == "echo"
+        assert result["results"][0]["result"] == {"echo": {"hello": "world"}}
+
+        assert result["results"][1]["ok"] is False
+        assert result["results"][1]["cmd"] == "nonexistent_cmd"
+        assert result["results"][1]["error"] == "UnknownCommand"
+
+        assert result["results"][2]["ok"] is False
+        assert result["results"][2]["cmd"] == "batch"
+        assert "nested batch" in result["results"][2]["message"].lower()

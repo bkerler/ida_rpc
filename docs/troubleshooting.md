@@ -237,13 +237,24 @@ ida-rpc restart --project /tmp/re.i64 --headless
 
 ## Batch Commands Fail with JSON Errors
 
-**Symptom**: `batch-rename` or `batch-set-comment` fails with a JSON parsing error.
+**Symptom**: `batch-rename`, `batch-set-comment`, or `batch` fails with a JSON parsing error.
 
-**Fix**: Ensure the JSON file contains a list of operation objects:
+**Fix**: Ensure the JSON file uses the expected shape.
+
+For `batch-rename` / `batch-set-comment`, provide a list of operation objects:
 ```json
 [
   {"target": "sub_401000", "new_name": "foo"},
   {"target": "sub_401010", "new_name": "bar"}
+]
+```
+
+For the generic `batch` command, provide a list of command objects (or an object
+with a `"commands"` key):
+```json
+[
+  {"cmd": "rename_function", "args": {"target": "sub_401000", "new_name": "foo"}},
+  {"cmd": "set_comment", "args": {"address": "0x401000", "comment": "note"}}
 ]
 ```
 

@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from ida_rpc.server.main import register_handler
+from ida_rpc.server.main import _HANDLERS, register_handler
 
 
 def _ida():
@@ -557,6 +557,82 @@ def _handle_batch_rename(ctx, args: dict) -> dict:
     }
 
 
+def _handle_batch(ctx, args: dict) -> dict:
+    """Execute a list of RPC commands in a single main-thread dispatch.
+
+    Args:
+        args: {"commands": [{"cmd": "...", "args": {...}}, ...]}
+
+    Returns:
+        {"results": [...], "count": int, "ok_count": int, "error_count": int}
+    """
+    commands = args.get("commands", [])
+
+    if not isinstance(commands, list) or not commands:
+        raise ValueError("'commands' must be a non-empty list")
+
+    results = []
+    ok_count = 0
+
+    def do_batch():
+        nonlocal ok_count
+        for idx, item in enumerate(commands):
+            if not isinstance(item, dict):
+                results.append({
+                    "ok": False, "index": idx,
+                    "error": "ValueError", "message": "command entry must be an object",
+                })
+                continue
+
+            sub_cmd = item.get("cmd", "")
+            sub_args = item.get("args", {})
+
+            if not isinstance(sub_args, dict):
+                results.append({
+                    "ok": False, "index": idx, "cmd": sub_cmd,
+                    "error": "ValueError", "message": "'args' must be an object",
+                })
+                continue
+
+            if sub_cmd == "batch":
+                results.append({
+                    "ok": False, "index": idx, "cmd": sub_cmd,
+                    "error": "ValueError", "message": "nested batch commands are not supported",
+                })
+                continue
+
+            handler = _HANDLERS.get(sub_cmd)
+            if handler is None:
+                results.append({
+                    "ok": False, "index": idx, "cmd": sub_cmd,
+                    "error": "UnknownCommand",
+                    "message": f"Unknown command: {sub_cmd}",
+                })
+                continue
+
+            try:
+                result = ctx.run_on_main_thread(handler, ctx, sub_args)
+                results.append({
+                    "ok": True, "index": idx, "cmd": sub_cmd,
+                    "result": result,
+                })
+                ok_count += 1
+            except Exception as e:
+                results.append({
+                    "ok": False, "index": idx, "cmd": sub_cmd,
+                    "error": type(e).__name__, "message": str(e),
+                })
+
+    ctx.run_on_main_thread(do_batch)
+    ctx.save()
+    return {
+        "results": results,
+        "count": len(results),
+        "ok_count": ok_count,
+        "error_count": len(results) - ok_count,
+    }
+
+
 def _handle_batch_set_comment(ctx, args: dict) -> dict:
     ida_name, ida_bytes, _, _, _, _, _ = _ida()
 
@@ -732,6 +808,7 @@ register_handler("set_thunk", _handle_set_thunk)
 register_handler("set_calling_convention", _handle_set_calling_convention)
 register_handler("batch_rename", _handle_batch_rename)
 register_handler("batch_set_comment", _handle_batch_set_comment)
+register_handler("batch", _handle_batch)
 register_handler("create_instruction", _handle_create_instruction)
 register_handler("create_instructions", _handle_create_instructions)
 register_handler("undefine", _handle_undefine)

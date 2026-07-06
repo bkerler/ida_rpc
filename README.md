@@ -197,6 +197,7 @@ Commands print human-readable text by default. Pass `--json` (before the subcomm
 | `stack-var-xrefs <func> [--offset N] [--name NAME]` | Find stack variable references |
 | `batch-rename --mode {function,symbol} --from-file <json>` | Bulk rename |
 | `batch-set-comment --from-file <json>` | Bulk set comments |
+| `batch --from-file <json>` | Execute multiple RPC commands in one batch |
 
 ### Lumina
 

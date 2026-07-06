@@ -186,6 +186,10 @@ ida-rpc batch-rename --from-file renames.json
 # Batch set comments from a JSON file
 # File format: [{"address": "0x401000", "comment": "note"}, ...]
 ida-rpc batch-set-comment --from-file comments.json
+
+# Generic batch: execute multiple RPC commands in one main-thread hop
+# File format: [{"cmd": "rename_function", "args": {"target": "sub_401000", "new_name": "foo"}}, ...]
+ida-rpc batch --from-file commands.json
 ```
 
 ## 11. Stop

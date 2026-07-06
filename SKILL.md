@@ -200,6 +200,7 @@ Loader aliases accepted by `--loader` include:
 | `set-calling-convention <target> <convention>` | | Change function calling convention |
 | `batch-rename --from-file <json>` | | Bulk rename functions/symbols |
 | `batch-set-comment --from-file <json>` | | Bulk set comments |
+| `batch --from-file <json>` | | Execute multiple RPC commands in one batch |
 
 ### Lumina
 

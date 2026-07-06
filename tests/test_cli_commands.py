@@ -32,7 +32,7 @@ class TestCliCommandsExist:
         "set-comment", "set-signature", "set-data-type",
         "create-function", "delete-function",
         "set-thunk", "set-calling-convention",
-        "batch-rename", "batch-set-comment",
+        "batch-rename", "batch-set-comment", "batch",
         "create-struct", "create-union", "create-enum",
         "modify-struct", "modify-enum",
         "clear-data-range", "apply-data-type-range",
@@ -573,6 +573,50 @@ class TestBatchCommands:
         monkeypatch.setenv("IDA_RPC_PROJECT", "/tmp/test.i64")
         result = self.runner.invoke(cli, ["batch-rename"])
         assert result.exit_code != 0
+
+    def test_batch_from_file(self, tmp_path, monkeypatch):
+        calls = []
+
+        def fake_rpc_command(project, cmd_name, args):
+            calls.append((cmd_name, args))
+            print(json.dumps({"ok": True, "result": {}}))
+
+        monkeypatch.setattr("ida_rpc.cli._rpc_command", fake_rpc_command)
+        monkeypatch.setenv("IDA_RPC_PROJECT", "/tmp/test.i64")
+
+        commands = [
+            {"cmd": "rename_function", "args": {"target": "sub_1000", "new_name": "foo"}},
+            {"cmd": "set_comment", "args": {"address": "0x1000", "comment": "note"}},
+        ]
+        fpath = tmp_path / "commands.json"
+        fpath.write_text(json.dumps(commands))
+
+        result = self.runner.invoke(cli, ["batch", "--from-file", str(fpath)])
+        assert result.exit_code == 0, result.output
+        assert len(calls) == 1
+        assert calls[0][0] == "batch"
+        assert calls[0][1]["commands"] == commands
+
+    def test_batch_commands_object_from_file(self, tmp_path, monkeypatch):
+        calls = []
+
+        def fake_rpc_command(project, cmd_name, args):
+            calls.append((cmd_name, args))
+            print(json.dumps({"ok": True, "result": {}}))
+
+        monkeypatch.setattr("ida_rpc.cli._rpc_command", fake_rpc_command)
+        monkeypatch.setenv("IDA_RPC_PROJECT", "/tmp/test.i64")
+
+        commands = [
+            {"cmd": "rename_function", "args": {"target": "sub_1000", "new_name": "foo"}},
+        ]
+        fpath = tmp_path / "commands.json"
+        fpath.write_text(json.dumps({"commands": commands}))
+
+        result = self.runner.invoke(cli, ["batch", "--from-file", str(fpath)])
+        assert result.exit_code == 0, result.output
+        assert calls[0][0] == "batch"
+        assert calls[0][1]["commands"] == commands
 
 
 class TestStopAll:
