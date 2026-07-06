@@ -108,7 +108,7 @@ class TestCliStartArgs:
 
         assert result.exit_code != 0
         assert "MissingParameter" in result.output
-        assert "--arch is required when importing a new binary" in result.output
+        assert "could not be detected from the file header" in result.output
 
     def test_open_requires_arch(self, tmp_path):
         binary = tmp_path / "sample.bin"
@@ -118,7 +118,93 @@ class TestCliStartArgs:
 
         assert result.exit_code != 0
         assert "MissingParameter" in result.output
-        assert "--arch is required when importing a new binary" in result.output
+        assert "could not be detected from the file header" in result.output
+
+    def test_start_auto_detects_arch_from_elf_header(self, tmp_path, monkeypatch):
+        binary = tmp_path / "sample.elf"
+        # Minimal 64-bit little-endian ELF header with e_machine = EM_X86_64 (0x3E)
+        elf = bytearray(b"\x7fELF")
+        elf += bytes([
+            2,   # EI_CLASS = ELFCLASS64
+            1,   # EI_DATA = ELFDATA2LSB
+            1,   # EI_VERSION
+            0,   # EI_OSABI
+            0, 0, 0, 0, 0, 0, 0, 0,  # padding
+        ])
+        elf += b"\x00\x00"  # e_type
+        elf += b"\x3e\x00"  # e_machine = x86_64
+        binary.write_bytes(bytes(elf) + b"\x00" * 0x30)
+        project = tmp_path / "sample.i64"
+        captured = {}
+
+        def fake_start_background(session, timeout, *, binary_path=None, extra_ida_args=None):
+            captured["session"] = session
+            captured["binary_path"] = binary_path
+            captured["extra_ida_args"] = extra_ida_args
+
+        monkeypatch.setattr("ida_rpc.daemon.start_background", fake_start_background)
+
+        result = self.runner.invoke(cli, [
+            "start", str(binary), "--project", str(project),
+            "--headless", "--detach",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert captured["session"].arch == "x86_64"
+        assert captured["binary_path"] == binary
+        assert captured["extra_ida_args"] == ["-pmetapc"]
+
+    def test_start_auto_detects_arch_from_pe_header(self, tmp_path, monkeypatch):
+        binary = tmp_path / "sample.exe"
+        # Minimal MZ + PE header with machine = AMD64 (0x8664)
+        data = bytearray(0x80)
+        data[0:2] = b"MZ"
+        data[0x3C:0x40] = (0x40).to_bytes(4, "little")  # e_lfanew
+        data[0x40:0x44] = b"PE\x00\x00"
+        data[0x44:0x46] = b"\x64\x86"  # Machine = AMD64
+        binary.write_bytes(bytes(data))
+        project = tmp_path / "sample.i64"
+        captured = {}
+
+        def fake_start_background(session, timeout, *, binary_path=None, extra_ida_args=None):
+            captured["session"] = session
+            captured["binary_path"] = binary_path
+            captured["extra_ida_args"] = extra_ida_args
+
+        monkeypatch.setattr("ida_rpc.daemon.start_background", fake_start_background)
+
+        result = self.runner.invoke(cli, [
+            "start", str(binary), "--project", str(project),
+            "--headless", "--detach",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert captured["session"].arch == "x86_64"
+        assert captured["binary_path"] == binary
+        assert captured["extra_ida_args"] == ["-pmetapc"]
+
+    def test_start_auto_detects_bare_mz_as_x86(self, tmp_path, monkeypatch):
+        binary = tmp_path / "sample.dos"
+        binary.write_bytes(b"MZ" + b"\x00" * 0x3E)
+        project = tmp_path / "sample.i64"
+        captured = {}
+
+        def fake_start_background(session, timeout, *, binary_path=None, extra_ida_args=None):
+            captured["session"] = session
+            captured["binary_path"] = binary_path
+            captured["extra_ida_args"] = extra_ida_args
+
+        monkeypatch.setattr("ida_rpc.daemon.start_background", fake_start_background)
+
+        result = self.runner.invoke(cli, [
+            "start", str(binary), "--project", str(project),
+            "--headless", "--detach",
+        ])
+
+        assert result.exit_code == 0, result.output
+        assert captured["session"].arch == "x86"
+        assert captured["binary_path"] == binary
+        assert captured["extra_ida_args"] == ["-pmetapc"]
 
     def test_start_existing_project_does_not_require_arch(self, tmp_path, monkeypatch):
         project = tmp_path / "sample.i64"
@@ -150,7 +236,7 @@ class TestCliStartArgs:
         # Should fail because binary doesn't exist (click.Path validates it)
         assert result.exit_code != 0
 
-    def test_start_fails_if_project_is_already_running(self, tmp_path, monkeypatch):
+    def test_start_reuses_already_running_project(self, tmp_path, monkeypatch):
         binary = tmp_path / "sample.bin"
         binary.write_bytes(b"\x00" * 4)
         project = tmp_path / "sample.i64"
@@ -166,13 +252,15 @@ class TestCliStartArgs:
         )
 
         result = self.runner.invoke(cli, [
-            "start", str(binary), "--project", str(project),
-            "--arch", "arm", "--headless", "--detach",
+            "--json", "start", str(binary), "--project", str(project),
+            "--arch", "arm", "--detach",
         ])
 
-        assert result.exit_code != 0
-        assert "AlreadyRunning" in result.output
-        assert str(project) in result.output
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert data["ok"] is True
+        assert data["result"]["status"] == "already_running"
+        assert str(project) in data["result"]["project"]
 
     def test_start_passes_raw_base_address_to_ida(self, tmp_path, monkeypatch):
         binary = tmp_path / "sample.bin"
@@ -342,7 +430,7 @@ class TestCliAgentDiscovery:
         assert data["ok"] is True
         assert data["result"]["project"] == str(binary.with_suffix(".i64"))
         assert data["result"]["exists"] is False
-        assert "--arch <arch>" in data["result"]["recommended_start"]
+        assert "--arch" not in data["result"]["recommended_start"]
 
     def test_find_project_existing_idb_recommended_start_omits_arch(self, tmp_path):
         project = tmp_path / "sample.i64"
@@ -637,7 +725,7 @@ class TestStopAll:
 
         result = self.runner.invoke(
             cli,
-            ["--json", "stop", "--project", str(idb)],
+            ["--json", "stop", "--project", str(idb), "--clean"],
         )
         assert result.exit_code == 0, result.output
         data = json.loads(result.output)

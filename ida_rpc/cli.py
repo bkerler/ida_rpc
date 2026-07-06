@@ -40,11 +40,11 @@ CORE_CAPABILITIES = {
     "purpose": "IDA Pro reverse-engineering RPC over a local Unix socket",
     "output": "Automation commands print human-readable text to stdout by default. Use --json for JSON output or set IDA_RPC_JSON=1.",
     "project_option": "--project <idb>; falls back to IDA_RPC_PROJECT",
-    "start_requires": "--arch <arch> is mandatory for start/open so IDA never guesses the processor",
+    "start_requires": "--arch <arch> is required for raw/unknown binaries; optional for ELF and PE files where the architecture is read from the header",
     "agent_workflow": [
         "capabilities",
         "find-project <binary-or-idb>",
-        "open <binary-or-idb> --arch <arch> --headless --detach",
+        "open <binary-or-idb> --detach",
         "status --project <idb>",
         "functions --project <idb> --limit 50",
         "decompile <function-or-address> --project <idb>",
@@ -325,11 +325,89 @@ def _resolve_processor_name(arch: str) -> str:
     return IDA_PROCESSOR_ALIASES.get(normalized, arch)
 
 
+# ELF e_machine values -> user-facing arch names that _resolve_processor_name understands
+_ELF_MACHINE_TO_ARCH = {
+    0x0003: "x86",        # EM_386
+    0x0004: "m68k",       # EM_68K
+    0x0008: "mips",       # EM_MIPS
+    0x0014: "ppc",        # EM_PPC
+    0x0015: "ppc",        # EM_PPC64
+    0x0028: "arm",        # EM_ARM
+    0x003E: "x86_64",     # EM_X86_64
+    0x00B7: "aarch64",    # EM_AARCH64
+    0x00F3: "risc-v",     # EM_RISCV
+}
+
+# PE IMAGE_FILE_MACHINE_* -> user-facing arch names
+_PE_MACHINE_TO_ARCH = {
+    0x014C: "x86",        # IMAGE_FILE_MACHINE_I386
+    0x0200: "x86_64",     # IMAGE_FILE_MACHINE_IA64 (Itanium; map to metapc family)
+    0x0266: "mips",       # IMAGE_FILE_MACHINE_MIPS16
+    0x0366: "mips",       # IMAGE_FILE_MACHINE_MIPSFPU
+    0x0466: "mips",       # IMAGE_FILE_MACHINE_MIPSFPU16
+    0x01F0: "ppc",        # IMAGE_FILE_MACHINE_POWERPC
+    0x01F1: "ppc",        # IMAGE_FILE_MACHINE_POWERPCFP
+    0x01C0: "arm",        # IMAGE_FILE_MACHINE_ARM
+    0x01C2: "arm",        # IMAGE_FILE_MACHINE_THUMB
+    0x01C4: "arm",        # IMAGE_FILE_MACHINE_ARMNT
+    0xAA64: "aarch64",    # IMAGE_FILE_MACHINE_ARM64
+    0x8664: "x86_64",     # IMAGE_FILE_MACHINE_AMD64
+    0x5032: "risc-v",     # IMAGE_FILE_MACHINE_RISCV32
+    0x5064: "risc-v",     # IMAGE_FILE_MACHINE_RISCV64
+    0x5128: "risc-v",     # IMAGE_FILE_MACHINE_RISCV128
+}
+
+
+def _detect_arch_from_header(binary_path: Path) -> str | None:
+    """Infer a user-facing arch name from ELF or PE/MZ file headers.
+
+    Returns a canonical arch string (e.g. 'x86', 'aarch64', 'arm') that can be
+    passed through _resolve_processor_name() to obtain the IDA processor name.
+    """
+    import struct
+
+    try:
+        data = binary_path.read_bytes()[:0x1000]
+    except (OSError, IOError):
+        return None
+    if len(data) < 4:
+        return None
+
+    # ELF: e_machine at offset 0x12, endianness from e_ident[EI_DATA] at offset 5
+    if data.startswith(b"\x7fELF"):
+        if len(data) < 0x14:
+            return None
+        ei_data = data[5]
+        if ei_data == 1:  # ELFDATA2LSB
+            machine = struct.unpack_from("<H", data, 0x12)[0]
+        elif ei_data == 2:  # ELFDATA2MSB
+            machine = struct.unpack_from(">H", data, 0x12)[0]
+        else:
+            return None
+        return _ELF_MACHINE_TO_ARCH.get(machine)
+
+    # PE/MZ: 'MZ' at offset 0, PE header offset at 0x3C, machine at PE+4
+    if data[:2] == b"MZ":
+        if len(data) < 0x40:
+            return None
+        pe_offset = struct.unpack_from("<I", data, 0x3C)[0]
+        # Sanity-check the PE header offset; if it looks bogus, treat as a
+        # plain DOS MZ and assume x86.
+        if pe_offset < 0x40 or pe_offset > len(data) - 6:
+            return "x86"
+        pe_sig = data[pe_offset:pe_offset + 4]
+        if pe_sig != b"PE\x00\x00":
+            return "x86"
+        machine = struct.unpack_from("<H", data, pe_offset + 4)[0]
+        return _PE_MACHINE_TO_ARCH.get(machine)
+
+    return None
+
+
 def _recommended_start(target: Path, project: Path, exists: bool) -> str:
-    arch_arg = "--arch <arch>"
     if exists:
-        return f"ida-rpc open --project {project} --headless --detach"
-    return f"ida-rpc open {target} --project {project} {arch_arg} --headless --detach"
+        return f"ida-rpc open --project {project} --detach"
+    return f"ida-rpc open {target} --project {project} --detach"
 
 
 def _live_status(sock: Path) -> dict[str, Any]:
@@ -561,7 +639,8 @@ def list_loaders(binary: str, ida_install_dir: str | None):
 @click.option("--arch", "-a", type=str, help="Processor type (e.g., arm, aarch64, x86, mips, ppc)")
 @click.option("--base", "-b", type=HEX_INT, help="Image base address for raw binaries")
 @click.option("--loader", "-T", type=str, help="IDA loader/file type to force (for example: raw, 'Binary file', miniloader)")
-@click.option("--headless", is_flag=True, help="Start in headless mode (no GUI)")
+@click.option("--gui", "use_gui", is_flag=True, help="Open in GUI mode instead of the default headless mode")
+@click.option("--headless", "headless_compat", is_flag=True, hidden=True, help="Deprecated: headless is now the default")
 @click.option("--detach", is_flag=True, help="Start in background")
 @click.option("--timeout", "-t", type=float, default=None)
 @click.option("--ida-install-dir", "ida_install_dir", type=str, default=None)
@@ -572,13 +651,14 @@ def start(
     arch: str | None,
     base: int | None,
     loader: str | None,
-    headless: bool,
+    use_gui: bool,
+    headless_compat: bool,
     detach: bool,
     timeout: float | None,
     ida_install_dir: str | None,
     clean: bool,
 ):
-    """Open a binary in IDA and start the RPC daemon."""
+    """Open a binary in IDA and start the RPC daemon (headless by default)."""
     from ida_rpc.daemon import is_running, start_background
 
     # Binary is optional when opening an existing IDB
@@ -602,14 +682,24 @@ def start(
     if not binary_path and not idb_path.exists():
         _error("FileNotFound", f"IDB not found and no binary provided: {idb_path}")
 
-    mode = "headless" if headless else "gui"
     sock = session_mod.socket_path_for_project(idb_path)
+
+    # If the database is already running, reuse it instead of reopening.
     if is_running(sock):
-        _error(
-            "AlreadyRunning",
-            f"ida-rpc daemon already running for {idb_path} at {sock}. "
-            "Use 'ida-rpc status' or stop it first.",
-        )
+        existing = session_mod.load(idb_path)
+        existing_mode = existing.mode if existing else "headless"
+        _output({
+            "ok": True,
+            "result": {
+                "status": "already_running",
+                "mode": existing_mode,
+                "project": str(idb_path),
+                "socket": str(sock),
+            },
+        })
+        return
+
+    requested_mode = "gui" if use_gui else "headless"
 
     ida_dir_path = None
     if ida_install_dir:
@@ -617,17 +707,24 @@ def start(
     elif os.environ.get("IDA_INSTALL_DIR"):
         ida_dir_path = Path(os.environ["IDA_INSTALL_DIR"])
 
+    imports_binary = bool(binary_path and not idb_path.exists())
+    if imports_binary and not arch:
+        detected_arch = _detect_arch_from_header(binary_path)
+        if detected_arch:
+            arch = detected_arch
+        else:
+            _error(
+                "MissingParameter",
+                "--arch is required when importing a new binary and the architecture could not be detected from the file header",
+            )
+
     session = session_mod.Session(
-        mode=mode,
+        mode=requested_mode,
         project_idb=idb_path,
         socket_path=sock,
         ida_install_dir=ida_dir_path,
         arch=arch,
     )
-
-    imports_binary = bool(binary_path and not idb_path.exists())
-    if imports_binary and not arch:
-        _error("MissingParameter", "--arch is required when importing a new binary")
 
     # Pass arch/base through to the background launcher
     extra_ida_args = []
@@ -654,7 +751,7 @@ def start(
         )
 
     if detach:
-        effective_timeout = timeout if timeout is not None else (60.0 if mode == "headless" else 180.0)
+        effective_timeout = timeout if timeout is not None else (60.0 if requested_mode == "headless" else 180.0)
         try:
             start_background(
                 session,
@@ -666,7 +763,7 @@ def start(
                 "ok": True,
                 "result": {
                     "status": "started",
-                    "mode": mode,
+                    "mode": requested_mode,
                     "project": str(idb_path),
                     "socket": str(sock),
                 },
@@ -680,12 +777,12 @@ def start(
     else:
         if ida_dir_path:
             os.environ["IDA_INSTALL_DIR"] = str(ida_dir_path)
-        click.echo(f"Starting ida-rpc daemon ({mode} mode)...", err=True)
+        click.echo(f"Starting ida-rpc daemon ({requested_mode} mode)...", err=True)
         if binary_path:
             click.echo(f"  Binary: {binary_path}", err=True)
         click.echo(f"  Project: {idb_path}", err=True)
         click.echo(f"  Socket:  {sock}", err=True)
-        effective_timeout = timeout if timeout is not None else (60.0 if mode == "headless" else 180.0)
+        effective_timeout = timeout if timeout is not None else (60.0 if requested_mode == "headless" else 180.0)
         start_background(
             session,
             timeout=effective_timeout,
@@ -696,7 +793,7 @@ def start(
             "ok": True,
             "result": {
                 "status": "started",
-                "mode": mode,
+                "mode": requested_mode,
                 "project": str(idb_path),
                 "socket": str(sock),
             },
@@ -709,7 +806,8 @@ def start(
 @click.option("--arch", "-a", type=str, help="Processor type (e.g., arm, aarch64, x86, mips, ppc)")
 @click.option("--base", "-b", type=HEX_INT, help="Image base address for raw binaries")
 @click.option("--loader", "-T", type=str, help="IDA loader/file type to force (for example: raw, 'Binary file', miniloader)")
-@click.option("--headless", is_flag=True, help="Start in headless mode (no GUI)")
+@click.option("--gui", "use_gui", is_flag=True, help="Open in GUI mode instead of the default headless mode")
+@click.option("--headless", "headless_compat", is_flag=True, hidden=True, help="Deprecated: headless is now the default")
 @click.option("--detach", is_flag=True, help="Start in background")
 @click.option("--timeout", "-t", type=float, default=None)
 @click.option("--ida-install-dir", "ida_install_dir", type=str, default=None)
@@ -720,20 +818,22 @@ def open_project(
     arch: str | None,
     base: int | None,
     loader: str | None,
-    headless: bool,
+    use_gui: bool,
+    headless_compat: bool,
     detach: bool,
     timeout: float | None,
     ida_install_dir: str | None,
     clean: bool,
 ):
-    """Agent-friendly alias for 'start'."""
+    """Agent-friendly alias for 'start' (headless by default)."""
     start.callback(
         binary,
         project,
         arch,
         base,
         loader,
-        headless,
+        use_gui,
+        headless_compat,
         detach,
         timeout,
         ida_install_dir,
@@ -743,18 +843,20 @@ def open_project(
 
 @cli.command()
 @click.option("--project", "-p", type=str, help="Path to IDB file")
-@click.option("--headless", is_flag=True, default=None)
+@click.option("--gui", "use_gui", is_flag=True, help="Restart in GUI mode instead of the default headless mode")
+@click.option("--headless", "headless_compat", is_flag=True, hidden=True, help="Deprecated: headless is now the default")
 @click.option("--timeout", "-t", type=float, default=None)
 @click.option("--ida-install-dir", "ida_install_dir", type=str, default=None)
 @click.option("--clean", is_flag=True, help="Remove stale IDA companion files before restarting")
 def restart(
     project: str | None,
-    headless: bool | None,
+    use_gui: bool,
+    headless_compat: bool,
     timeout: float | None,
     ida_install_dir: str | None,
     clean: bool,
 ):
-    """Restart the daemon for a project."""
+    """Restart the daemon for a project (headless by default)."""
     from ida_rpc.daemon import start_background, stop_daemon
 
     idb = _resolve_project(project)
@@ -777,17 +879,24 @@ def restart(
 
     session = session_mod.load(idb)
     if session is None:
-        if headless:
-            session = session_mod.Session(
-                mode="headless", project_idb=idb, socket_path=sock,
-            )
-        else:
-            _error(
-                "NoSession",
-                f"No saved session for {idb}. Use 'ida-rpc start <binary> --arch <arch>' first, or pass '--headless'.",
-            )
-
-    if headless:
+        session = session_mod.Session(
+            mode="gui" if use_gui else "headless",
+            project_idb=idb,
+            socket_path=sock,
+        )
+    elif not use_gui and session.mode == "gui":
+        # Preserve the original GUI mode unless the user explicitly requests headless.
+        pass
+    elif use_gui:
+        session = session_mod.Session(
+            mode="gui",
+            project_idb=session.project_idb,
+            socket_path=session.socket_path,
+            ida_install_dir=session.ida_install_dir,
+            arch=session.arch,
+        )
+    else:
+        # Default to headless when no saved mode or saved mode was headless.
         session = session_mod.Session(
             mode="headless",
             project_idb=session.project_idb,
@@ -805,7 +914,7 @@ def restart(
 
     try:
         start_background(session, timeout=effective_timeout)
-        _output({"ok": True, "result": {"status": "restarted", "socket": str(sock)}})
+        _output({"ok": True, "result": {"status": "restarted", "mode": session.mode, "socket": str(sock)}})
     except TimeoutError as e:
         _error("RestartTimeout", str(e))
     except Exception as e:
@@ -892,8 +1001,8 @@ def status(project: str | None):
 @click.option("--all", "stop_all", is_flag=True, help="Stop all running ida-rpc daemons")
 @click.option(
     "--clean/--no-clean",
-    default=True,
-    help="Remove IDA companion files for the stopped project",
+    default=False,
+    help="Remove IDA companion files for the stopped project (default: false, preserves GUI temp files)",
 )
 def stop(project: str | None, stop_all: bool, clean: bool):
     """Stop the daemon for a project, or all daemons with --all."""

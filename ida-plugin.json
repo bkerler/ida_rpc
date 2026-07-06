@@ -3,7 +3,7 @@
   "IDAMetadataDescriptorVersion": 1,
   "plugin": {
     "name": "ida-rpc",
-    "version": "0.1.4",
+    "version": "0.1.5",
     "entryPoint": "ida_rpc_plugin.py",
     "description": "CLI-driven daemon exposing IDA Pro reverse engineering capabilities over a Unix domain socket",
     "logoPath": "ida-plugin.png",

@@ -18,9 +18,9 @@ ida-rpc list-loaders <binary>
 Then use:
 
 ```bash
-ida-rpc open <binary-or-idb> --arch <arch> --headless --detach
-ida-rpc open <raw.bin> --arch arm --base 0x8000 --loader raw --headless --detach
-ida-rpc open <loader.bin> --arch arm --loader miniloader --headless --detach
+ida-rpc open <binary-or-idb> --arch <arch> --detach
+ida-rpc open <raw.bin> --arch arm --base 0x8000 --loader raw --detach
+ida-rpc open <loader.bin> --arch arm --loader miniloader --detach
 ida-rpc status --project <idb>
 ida-rpc metadata --project <idb>
 ida-rpc functions --project <idb> --limit 50
@@ -296,6 +296,9 @@ Error response:
 
 ### Headless Launch
 
+`ida-rpc start` and `ida-rpc open` default to headless mode. Use `--gui` to
+open a database in the IDA GUI instead.
+
 ```bash
 # Use ida (GUI binary) with -A. idat fails silently with "error code 2"
 # when creating new databases in read-only directories on Linux.
@@ -304,9 +307,12 @@ ida -A -L/tmp/ida.log -S/path/to/ida-rpc/ida_rpc_plugin.py /path/to/binary
 
 The plugin keeps IDA alive with a sleep loop after the server starts.
 
-### Raw Binary Auto-Configuration
+### Binary Auto-Configuration
 
-`--arch` is mandatory for `ida-rpc start/open`. The plugin uses it to auto-configure segments before auto-analysis:
+`--arch` is required for raw/unknown binaries so the plugin can auto-configure
+segments before auto-analysis. For files with an ELF or PE/MZ header, `--arch`
+is optional: the CLI extracts the architecture from `e_machine` (ELF) or the
+PE `Machine` field and passes the matching IDA processor to IDA.
 
 | Arch | Segment class | Bitness | Perms |
 |------|--------------|---------|-------|
@@ -316,7 +322,7 @@ The plugin keeps IDA alive with a sleep loop after the server starts.
 | `metapc` / `x86` | `CODE` | 1 (32-bit) | read + exec |
 | `x64` | `CODE64` | 2 (64-bit) | read + exec |
 
-This is handled by `_configure_segments_for_arch()` in `ida_rpc_plugin.py`. The `arch` is stored in the `Session` object and persisted across restarts.
+Raw-binary segment configuration is handled by `_configure_segments_for_arch()` in `ida_rpc_plugin.py`. The `arch` is stored in the `Session` object and persisted across restarts.
 
 ## Session & Socket Paths
 
@@ -353,13 +359,14 @@ After adding or changing a command:
 
 1. Reinstall: `pip install -e .`
 2. Run unit tests: `pytest tests/ -v`
-3. Start headless daemon: `ida-rpc start --project /tmp/test.i64 --arch arm --headless --detach`
+3. Start headless daemon: `ida-rpc start --project /tmp/test.i64 --arch arm --detach`
 4. Run the command via CLI and verify JSON output
 5. Check `ida-rpc status --project /tmp/test.i64`
 6. Stop: `ida-rpc stop --project /tmp/test.i64` (or `ida-rpc stop --all` to close every open project at once)
 
 ## Common Pitfalls
 
+- **Calling `start`/`open` on an already-running project** — the CLI now returns `{"status": "already_running"}` and reuses the existing daemon instead of erroring.
 - **Forgot `ctx.save()` after mutations** — changes are lost when IDA exits.
 - **Calling IDA APIs outside `run_on_main_thread`** in write handlers — crashes or `RuntimeError`.
 - **Not importing IDA modules lazily** — `ImportError` when CLI client imports the module.

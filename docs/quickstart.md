@@ -4,29 +4,33 @@ This guide walks you through a first session with ida-rpc.
 
 ## 1. Start the Daemon
 
-Open a terminal and start the daemon. This blocks and shows logs:
+Open a terminal and start the daemon. Headless mode is the default; this blocks and
+shows logs until you press Ctrl-C:
 
 ```bash
-# Headless (no GUI) — good for automated analysis
-ida-rpc start /path/to/binary --arch <arch> --headless
-
-# Or with GUI — opens IDA interactively
+# Headless (no GUI) — good for automated analysis (default)
 ida-rpc start /path/to/binary --arch <arch>
 
+# Or with GUI — opens IDA interactively
+ida-rpc start /path/to/binary --arch <arch> --gui
+
 # For raw binaries, specify architecture and base address
-ida-rpc start /path/to/raw.bin --arch arm --base 0x8000 --loader raw --headless
+ida-rpc start /path/to/raw.bin --arch arm --base 0x8000 --loader raw
 ```
 
 For automation, start in the background (returns once the socket is responsive):
 ```bash
-ida-rpc start /path/to/binary --arch <arch> --headless --detach
+ida-rpc start /path/to/binary --arch <arch> --detach
 ```
 
 The `.i64` IDB file will be created next to the binary if it doesn't exist. You can
 override the IDB path with `--project`:
 ```bash
-ida-rpc start /path/to/binary --project /custom/path.i64 --arch <arch> --headless --detach
+ida-rpc start /path/to/binary --project /custom/path.i64 --arch <arch> --detach
 ```
+
+If a daemon for the project is already running, `start`/`open` reuse it instead of
+opening a second IDA instance.
 
 When the file type is ambiguous, list available loaders and candidates first:
 
@@ -34,11 +38,11 @@ When the file type is ambiguous, list available loaders and candidates first:
 ida-rpc list-loaders /path/to/binary
 
 # Force a loader by alias
-ida-rpc start /path/to/raw.bin --arch arm --base 0x8000 --loader raw --headless --detach
-ida-rpc start /path/to/miniloader.bin --arch arm --loader miniloader --headless --detach
+ida-rpc start /path/to/raw.bin --arch arm --base 0x8000 --loader raw --detach
+ida-rpc start /path/to/miniloader.bin --arch arm --loader miniloader --detach
 
 # Or force the exact IDA loader string
-ida-rpc start /path/to/image.itb --arch arm --loader "Rockchip U-Boot FIT image" --headless --detach
+ida-rpc start /path/to/image.itb --arch arm --loader "Rockchip U-Boot FIT image" --detach
 ```
 
 Common loader aliases:

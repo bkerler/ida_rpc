@@ -243,10 +243,8 @@ class IdaRpcPlugin(ida_idaapi.plugin_t):
         if arch:
             _configure_segments_for_arch(arch)
 
-        # In headless mode, expose RPC before long auto-analysis completes so
-        # agents can inspect and steer large raw firmware databases.
-        if mode != "headless":
-            ida_auto.auto_wait()
+        # Wait for auto-analysis after raw import mode/bitness is corrected.
+        ida_auto.auto_wait()
 
         ctx = IdaContext(self.session)
 
