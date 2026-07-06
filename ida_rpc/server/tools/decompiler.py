@@ -406,10 +406,15 @@ def _handle_decompiler_xrefs(ctx, args: dict) -> dict:
         matched = False
         if target_ea is not None:
             # Check object references
-            if item.op == ida_hexrays.cot_obj and item.obj_ea == target_ea:
+            obj_ea = getattr(item, "obj_ea", None)
+            num = getattr(item, "n", None)
+            if item.op == ida_hexrays.cot_obj and obj_ea == target_ea:
                 matched = True
-            elif item.op == ida_hexrays.cot_num and item.n.value(target_ea) == target_ea:
-                matched = True
+            elif item.op == ida_hexrays.cot_num and num is not None:
+                try:
+                    matched = num.value(target_ea) == target_ea
+                except Exception:
+                    matched = False
         # Check name-based match for variables
         if not matched and hasattr(item, "name") and item.name == target:
             matched = True
