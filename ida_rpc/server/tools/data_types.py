@@ -589,13 +589,13 @@ def _handle_apply_data_type_range(ctx, args: dict) -> dict:
         while ea + item_size <= end:
             ida_bytes.del_items(ea, ida_bytes.DELIT_SIMPLE, item_size)
             if type_lower in flag_map:
-                ida_bytes.create_data(ea, flag, item_size)
+                ida_bytes.create_data(ea, flag, item_size, ida_idaapi.BADADDR)
             else:
                 tif = ida_typeinf.tinfo_t()
                 if ida_typeinf.parse_decl(tif, None, data_type, ida_typeinf.PT_TYP):
                     ida_bytes.apply_tinfo(ea, tif, ida_typeinf.TINFO_DEFINITE)
                 else:
-                    ida_bytes.create_data(ea, flag, item_size)
+                    ida_bytes.create_data(ea, flag, item_size, ida_idaapi.BADADDR)
             ea += item_size
             count += 1
 

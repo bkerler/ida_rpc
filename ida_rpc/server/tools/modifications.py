@@ -261,7 +261,7 @@ def _handle_set_data_type(ctx, args: dict) -> dict:
         }
 
         if type_lower in flag_map:
-            success = ida_bytes.create_data(addr, flag_map[type_lower], 0)
+            success = ida_bytes.create_data(addr, flag_map[type_lower], 0, ida_idaapi.BADADDR)
         elif type_lower in ("string", "cstring", "c_string"):
             success = ida_bytes.create_strlit(addr, 0, 0)
         elif type_lower == "unicode":
