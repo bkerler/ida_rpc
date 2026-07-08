@@ -326,12 +326,13 @@ def _handle_decompile_microcode(ctx, args: dict) -> dict:
         raise ValueError("Missing required argument: func")
 
     func_ea = ctx.find_function(func_name)
-    maturity = int(args.get("maturity", ida_hexrays.MMAT_GLBOPT))
 
     try:
         ida_hexrays, ida_funcs, ida_lines, ida_idaapi, ida_nalt, ida_typeinf = _ida()
     except ImportError:
         raise RuntimeError("Hex-Rays decompiler is not available.")
+
+    maturity = int(args.get("maturity", ida_hexrays.MMAT_GLBOPT))
 
     if not ida_hexrays.init_hexrays_plugin():
         raise RuntimeError("Failed to initialize Hex-Rays decompiler.")
