@@ -332,17 +332,28 @@ def _handle_decompile_microcode(ctx, args: dict) -> dict:
     except ImportError:
         raise RuntimeError("Hex-Rays decompiler is not available.")
 
-    maturity = int(args.get("maturity", ida_hexrays.MMAT_GLBOPT))
+    default_maturity = getattr(ida_hexrays, "MMAT_GLBOPT", None)
+    if default_maturity is None:
+        default_maturity = getattr(ida_hexrays, "MMAT_GENERATED", 0)
+    maturity = int(args.get("maturity", default_maturity))
 
     if not ida_hexrays.init_hexrays_plugin():
         raise RuntimeError("Failed to initialize Hex-Rays decompiler.")
 
-    mba = ida_hexrays.gen_microcode(func_ea, None, None, 0, maturity)
+    func = ida_funcs.get_func(func_ea)
+    if func is None:
+        raise ValueError(f"No function at 0x{func_ea:x}")
+    mbr = ida_hexrays.mba_ranges_t(func)
+    hf = ida_hexrays.hexrays_failure_t()
+    ml = ida_hexrays.mlist_t()
+    mba = ida_hexrays.gen_microcode(mbr, hf, ml, 0, maturity)
     if mba is None:
         raise RuntimeError("Microcode generation failed")
 
     blocks = []
-    for blk in mba.blocks:
+    mba.build_graph()
+    for i in range(mba.qty):
+        blk = mba.get_mblock(i)
         instructions = []
         insn = blk.head
         while insn:
