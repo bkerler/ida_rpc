@@ -91,10 +91,16 @@ def _handle_rename_symbol(ctx, args: dict) -> dict:
             raise ValueError(f"No symbol found at address {address}")
         flags = ida_name.SN_CHECK
         if not ida_name.set_name(addr, new_name, flags):
-            actual = ida_name.get_name(addr) or ""
-            raise RuntimeError(
-                f"IDA refused to name 0x{addr:x} as {new_name!r}; current name is {actual!r}"
-            )
+            current = ida_name.get_name(addr) or ""
+            # Some database locations reject a plain SN_CHECK rename even though
+            # IDA will accept a forced user label at the same address.
+            if create or not current:
+                flags |= ida_name.SN_FORCE
+            if not ida_name.set_name(addr, new_name, flags):
+                actual = ida_name.get_name(addr) or ""
+                raise RuntimeError(
+                    f"IDA refused to name 0x{addr:x} as {new_name!r}; current name is {actual!r}"
+                )
         actual = ida_name.get_name(addr)
         result = {
             "address": f"0x{addr:x}",

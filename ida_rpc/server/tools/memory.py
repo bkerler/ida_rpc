@@ -129,8 +129,13 @@ def _handle_read_string(ctx, args: dict) -> dict:
         if strtype == ida_idaapi.BADADDR:
             strtype = ida_nalt.STRTYPE_C
 
+    # Ask IDA for the current item size first; some builds reject -1 here.
+    item_size = ida_bytes.get_item_size(addr)
+    if item_size <= 0:
+        item_size = 0
+
     # Try to get string contents
-    contents = ida_bytes.get_strlit_contents(addr, -1, strtype)
+    contents = ida_bytes.get_strlit_contents(addr, item_size, strtype)
     if contents is None:
         return {
             "address": f"0x{addr:x}",

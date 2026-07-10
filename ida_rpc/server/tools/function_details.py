@@ -42,6 +42,19 @@ def _func_flags_to_list(flags: int) -> list[str]:
     return names
 
 
+def _iter_function_tails(ida_funcs, func):
+    try:
+        it = ida_funcs.func_tail_iterator_t(func)
+    except Exception:
+        return
+    status = it.main()
+    while status:
+        tail = it.chunk()
+        if tail and tail.start_ea != func.start_ea:
+            yield tail
+        status = it.next()
+
+
 def _handle_function_info(ctx, args: dict) -> dict:
     ida_funcs, ida_frame, ida_typeinf, ida_nalt, ida_idaapi, idautils, ida_bytes = _ida()
 
@@ -93,16 +106,13 @@ def _handle_function_info(ctx, args: dict) -> dict:
         "owner": name,
         "primary": True,
     })
-    if func.tailqty > 0:
-        for i in range(func.tailqty):
-            tail = ida_funcs.get_fchunk(func, i)
-            if tail:
-                chunks.append({
-                    "start": f"0x{tail.start_ea:x}",
-                    "end": f"0x{tail.end_ea - 1:x}",
-                    "owner": name,
-                    "primary": False,
-                })
+    for tail in _iter_function_tails(ida_funcs, func):
+        chunks.append({
+            "start": f"0x{tail.start_ea:x}",
+            "end": f"0x{tail.end_ea - 1:x}",
+            "owner": name,
+            "primary": False,
+        })
 
     # Register arguments (regargs)
     regargs = []
@@ -192,16 +202,13 @@ def _handle_function_chunks(ctx, args: dict) -> dict:
         "owner": name,
         "primary": True,
     })
-    if func.tailqty > 0:
-        for i in range(func.tailqty):
-            tail = ida_funcs.get_fchunk(func, i)
-            if tail:
-                chunks.append({
-                    "start": f"0x{tail.start_ea:x}",
-                    "end": f"0x{tail.end_ea:x}",
-                    "owner": name,
-                    "primary": False,
-                })
+    for tail in _iter_function_tails(ida_funcs, func):
+        chunks.append({
+            "start": f"0x{tail.start_ea:x}",
+            "end": f"0x{tail.end_ea:x}",
+            "owner": name,
+            "primary": False,
+        })
 
     return {
         "name": name,
