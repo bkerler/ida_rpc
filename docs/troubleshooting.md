@@ -6,7 +6,7 @@
 
 **Fix**: Set the environment variable to your IDA Pro installation:
 ```bash
-export IDA_INSTALL_DIR=/opt/ida-pro-9.3sp2
+export IDA_INSTALL_DIR=/opt/ida-pro-9.4
 ```
 This must be set in the terminal where the daemon runs, or pass `--ida-install-dir`.
 

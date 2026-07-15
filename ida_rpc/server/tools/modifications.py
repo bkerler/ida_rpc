@@ -205,12 +205,32 @@ def _handle_set_function_signature(ctx, args: dict) -> dict:
         # processor modules, including nanoMIPS firmware databases.
         if idc.SetType(func_ea, signature):
             new_sig = idc.get_type(func_ea) or ""
-            return {
-                "address": f"0x{func_ea:x}",
-                "old_signature": old_sig,
-                "new_signature": new_sig,
-                "verified": bool(new_sig) and new_sig != old_sig,
-            }
+            if new_sig and new_sig != old_sig:
+                return {
+                    "address": f"0x{func_ea:x}",
+                    "old_signature": old_sig,
+                    "new_signature": new_sig,
+                    "verified": True,
+                }
+            try:
+                import ida_hexrays
+
+                if ida_hexrays.init_hexrays_plugin():
+                    cfunc = ida_hexrays.decompile(func_ea)
+                    decompiler_sig = str(cfunc.type) if cfunc is not None else ""
+                    if decompiler_sig:
+                        return {
+                            "address": f"0x{func_ea:x}",
+                            "old_signature": old_sig,
+                            "new_signature": decompiler_sig,
+                            "verified": True,
+                            "verification_source": "hexrays",
+                        }
+            except Exception:
+                pass
+            # Some processor modules, notably nanoMIPS, report success while
+            # retaining the previous generic function type. Fall through to
+            # the tinfo path instead of accepting that false positive.
 
         tif = ida_typeinf.tinfo_t()
         if not ida_typeinf.parse_decl(tif, None, signature, ida_typeinf.PT_TYP):

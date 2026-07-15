@@ -87,7 +87,7 @@ RPC queries should always be run outside the sandbox.
 
 ## Development Environment
 
-- **IDA Pro Version:** 9.3 SP2 at `$(IDA_INSTALL_DIR)` (e.g. `/home/bjk/bin/ida-pro-9.3sp2`)
+- **IDA Pro Version:** 9.4 at `$(IDA_INSTALL_DIR)` (e.g. `/home/bjk/bin/ida-pro-9.4`)
 - **Plugin install path:** `$IDAUSR/plugins/ida_rpc_plugin.py` (default `$IDAUSR` is `~/.idapro/` on Linux, `~/Library/Application Support/IDA Pro/` on macOS, `%APPDATA%\Hex-Rays\IDA Pro\` on Windows)
 - **Plugin symlink (dev):** `ln -s /path/to/ida-rpc/ida_rpc_plugin.py $(IDA_INSTALL_DIR)/plugins/ida_rpc_plugin.py`
 - **Python package:** `pip install -e /path/to/ida-rpc`
@@ -99,7 +99,7 @@ Use `list-loaders` before opening ambiguous or raw firmware:
 
 ```bash
 ida-rpc list-loaders /path/to/blob.bin
-ida-rpc list-loaders /path/to/blob.bin --ida-install-dir /opt/ida-pro-9.3sp2
+ida-rpc list-loaders /path/to/blob.bin --ida-install-dir /opt/ida-pro-9.4
 ```
 
 `list-loaders` reports:

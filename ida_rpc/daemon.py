@@ -145,7 +145,7 @@ def start_background(
         raise FileNotFoundError(
             f"IDA executable not found: {ida_exe}\n"
             f"Set IDA_INSTALL_DIR to your IDA Pro installation directory, e.g.:\n"
-            f"  export IDA_INSTALL_DIR=/opt/ida-pro-9.3sp2\n"
+            f"  export IDA_INSTALL_DIR=/opt/ida-pro-9.4\n"
             f"Or pass --ida-install-dir to the command."
         )
     if ida_exe.name not in {"ida", "idat", "ida64", "idat64"}:

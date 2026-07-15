@@ -12,7 +12,7 @@ Point this at your IDA Pro installation directory (the one containing `ida` and 
 
 ```bash
 # Add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
-export IDA_INSTALL_DIR=/opt/ida-pro-9.3sp2
+export IDA_INSTALL_DIR=/opt/ida-pro-9.4
 ```
 
 This is optional but recommended — the daemon will try to find IDA automatically if not set.
@@ -43,7 +43,7 @@ Default plugin installation locations (`$IDAUSR/plugins/`):
 You can override `$IDAUSR` when testing across multiple IDA versions:
 
 ```bash
-export IDAUSR=~/.idapro93/
+export IDAUSR=~/.idapro94/
 hcli plugin install ida-rpc
 ```
 
@@ -85,7 +85,7 @@ ln -s /path/to/ida-rpc/ida_rpc_plugin.py $(IDA_INSTALL_DIR)/plugins/ida_rpc_plug
 
 ```bash
 ida-rpc --version
-# Should print: ida-rpc, version 0.1.5
+# Should print: ida-rpc, version 0.1.6
 ```
 
 ## What Gets Installed

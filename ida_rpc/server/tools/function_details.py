@@ -88,6 +88,16 @@ def _handle_function_info(ctx, args: dict) -> dict:
             prototype = ida_typeinf.print_tinfo(None, 0, 0, ida_typeinf.PRTYPE_1LINE, tif, None, None)
     except Exception:
         pass
+    if not prototype:
+        try:
+            import ida_hexrays
+
+            if ida_hexrays.init_hexrays_plugin():
+                cfunc = ida_hexrays.decompile(func_ea)
+                if cfunc is not None:
+                    prototype = str(cfunc.type) or None
+        except Exception:
+            pass
 
     # Color
     color = None
