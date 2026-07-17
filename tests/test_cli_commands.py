@@ -71,6 +71,18 @@ class TestCliCommandsExist:
         assert result.exit_code == 0, f"Command '{cmd}' failed: {result.output}"
         assert result.output.startswith("Usage:")
 
+    @pytest.mark.parametrize("args", [[], ["-h"], ["--help"]])
+    def test_root_help(self, args):
+        result = self.runner.invoke(cli, args)
+        assert result.exit_code == 0, result.output
+        assert result.output.startswith("Usage:")
+
+    @pytest.mark.parametrize("cmd", ["start", "functions", "save"])
+    def test_short_help_option(self, cmd):
+        result = self.runner.invoke(cli, [cmd, "-h"])
+        assert result.exit_code == 0, f"Command '{cmd}' failed: {result.output}"
+        assert result.output.startswith("Usage:")
+
 
 class TestCliStartArgs:
     """Test the start command argument structure."""

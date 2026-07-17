@@ -559,7 +559,11 @@ def _resolve_existing_or_default_project(path: Path) -> tuple[Path, bool]:
     return _default_project_for_binary(path).resolve(), False
 
 
-@click.group()
+@click.group(
+    context_settings={"help_option_names": ["-h", "--help"]},
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
 @click.version_option(__version__, prog_name="ida-rpc")
 @click.option(
     "--json",
@@ -572,6 +576,8 @@ def cli(ctx, json_output):
     """ida-rpc: CLI for the IDA Pro RPC daemon."""
     ctx.ensure_object(dict)
     ctx.obj["json_output"] = json_output or os.environ.get("IDA_RPC_JSON") in ("1", "true", "yes")
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
 
 
 @cli.command(name="capabilities")
