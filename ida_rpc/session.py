@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -28,10 +29,10 @@ class Session:
 
 
 def socket_path_for_project(idb: Path | str) -> Path:
-    """Derive a deterministic socket path from an IDB path."""
+    """Derive a deterministic local endpoint marker path from an IDB path."""
     idb = Path(idb)
     digest = hashlib.sha256(str(idb.resolve()).encode()).hexdigest()[:8]
-    return Path(f"/tmp/ida-rpc-{digest}.sock")
+    return Path(tempfile.gettempdir()) / f"ida-rpc-{digest}.sock"
 
 
 def session_file_path(idb: Path | str) -> Path:

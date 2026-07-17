@@ -1,6 +1,6 @@
 {
   "name": "ida-rpc",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Reverse engineering assistant powered by IDA Pro — CLI daemon exposing decompilation, cross-references, and binary analysis over a Unix domain socket",
   "keywords": ["pi-package"],
   "pi": {

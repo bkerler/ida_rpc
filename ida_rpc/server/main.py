@@ -1,5 +1,5 @@
 # (c) B. Kerler 2026, MIT license
-"""Unix domain socket server for ida-rpc.
+"""Local socket server for ida-rpc.
 
 Accepts newline-delimited JSON requests and dispatches to tool handlers.
 """
@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from ida_rpc.session import Session
+from ida_rpc.transport import create_server_socket, remove_endpoint_marker
 
 logger = logging.getLogger("ida-rpc.server")
 
@@ -126,7 +127,7 @@ def _handle_connection(
 
 
 def run_server(session: Session, ctx: Any, *, synchronous: bool = False) -> None:
-    """Run the RPC server on a Unix domain socket.
+    """Run the RPC server on a local Unix or loopback TCP socket.
 
     Blocks until a 'stop' command is received or the process is interrupted.
 
@@ -145,13 +146,7 @@ def run_server(session: Session, ctx: Any, *, synchronous: bool = False) -> None
     register_all_tools()
 
     sock_path = session.socket_path
-
-    if sock_path.exists():
-        sock_path.unlink()
-
-    server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    server_sock.bind(str(sock_path))
-    server_sock.listen(64)
+    server_sock = create_server_socket(sock_path)
     server_sock.setblocking(False)
 
     shutdown_event = threading.Event()
@@ -227,7 +222,6 @@ def run_server(session: Session, ctx: Any, *, synchronous: bool = False) -> None
             _drain_queued_requests()
     finally:
         server_sock.close()
-        if sock_path.exists():
-            sock_path.unlink()
+        remove_endpoint_marker(sock_path)
         logger.info("Server shut down.")
         print("Server shut down.", file=sys.stderr)

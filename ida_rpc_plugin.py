@@ -14,8 +14,10 @@ For headless daemon mode, run:
 from __future__ import annotations
 
 import os
+import tempfile
 import sys
 import threading
+from pathlib import Path
 
 # Ensure ida_rpc is importable
 # Use realpath to resolve symlinks
@@ -62,6 +64,7 @@ def _get_kernwin():
 
 
 from ida_rpc.session import Session, socket_path_for_project, save, load as load_session
+from ida_rpc.transport import remove_endpoint_marker
 from ida_rpc.server.main import run_server
 from ida_rpc.server.context import IdaContext
 
@@ -195,7 +198,7 @@ def _is_headless():
 class IdaRpcPlugin(ida_idaapi.plugin_t):
     flags = ida_idaapi.PLUGIN_KEEP
     comment = "IDA RPC daemon plugin"
-    help = "Expose IDA Pro capabilities via JSON-RPC over Unix socket"
+    help = "Expose IDA Pro capabilities via JSON-RPC over a local socket"
     wanted_name = "ida-rpc"
     wanted_hotkey = ""
 
@@ -220,7 +223,7 @@ class IdaRpcPlugin(ida_idaapi.plugin_t):
         if not idb_path:
             idb_path = ida_loader.get_path(ida_loader.PATH_TYPE_ID0)
         if not idb_path:
-            idb_path = "/tmp/ida-rpc-default.i64"
+            idb_path = str(Path(tempfile.gettempdir()) / "ida-rpc-default.i64")
 
         idb_path = os.path.abspath(idb_path)
         socket_path = socket_path_for_project(idb_path)
@@ -278,9 +281,9 @@ class IdaRpcPlugin(ida_idaapi.plugin_t):
 
     def term(self):
         global _plugin_instance
-        if self.session and self.session.socket_path.exists():
+        if self.session:
             try:
-                self.session.socket_path.unlink()
+                remove_endpoint_marker(self.session.socket_path)
             except Exception:
                 pass
         if _plugin_instance is self:

@@ -31,7 +31,8 @@ cron/systemd/nohup contexts that strip non-standard env vars.
 3. Polls the socket (0.5 s interval) until it's responsive or the timeout expires.
 4. On timeout the error message includes the log file path.
 
-Log file: `/tmp/ida-rpc-<hash>.log` (same stem as the socket). On timeout:
+Log file: the platform temporary directory as `ida-rpc-<hash>.log` (same stem
+as the endpoint marker). On timeout:
 ```bash
 tail -50 /tmp/ida-rpc-*.log
 ```

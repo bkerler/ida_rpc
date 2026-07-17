@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
 
 from ida_rpc.session import Session
+from ida_rpc.transport import endpoint_address
 
 
 # IDA database companion file extensions that can become stale after a crash
@@ -52,22 +54,26 @@ def is_running(socket_path: Path) -> bool:
         return False
 
     try:
-        s = sock_mod.socket(sock_mod.AF_UNIX, sock_mod.SOCK_STREAM)
-        s.settimeout(5)
-        s.connect(str(socket_path))
-        request = {"id": str(uuid.uuid4()), "cmd": "ping", "args": {}}
-        s.sendall((json.dumps(request) + "\n").encode())
-        data = b""
-        while b"\n" not in data:
-            chunk = s.recv(4096)
-            if not chunk:
-                break
-            data += chunk
-        s.close()
-        if data.strip():
-            resp = json.loads(data.decode().strip())
-            return resp.get("ok", False)
-        return False
+        address = endpoint_address(socket_path)
+        family = sock_mod.AF_UNIX if isinstance(address, str) else sock_mod.AF_INET
+        s = sock_mod.socket(family, sock_mod.SOCK_STREAM)
+        try:
+            s.settimeout(5)
+            s.connect(address)
+            request = {"id": str(uuid.uuid4()), "cmd": "ping", "args": {}}
+            s.sendall((json.dumps(request) + "\n").encode())
+            data = b""
+            while b"\n" not in data:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+            if data.strip():
+                resp = json.loads(data.decode().strip())
+                return resp.get("ok", False)
+            return False
+        finally:
+            s.close()
     except Exception:
         return False
 
@@ -126,20 +132,40 @@ def start_background(
     env.setdefault("LC_ALL", "C.UTF-8")
     env.setdefault("LANG", "C.UTF-8")
 
-    # Determine IDA executable
+    # Determine IDA executable.  Windows IDA installations normally expose
+    # ida64.exe/idat64.exe, while POSIX installations use ida/idat.
     ida_root = Path(ida_dir) if ida_dir else None
-    if session.mode == "headless" and ida_root is not None:
-        idat_exe = ida_root / "idat"
-        ida_gui_exe = ida_root / "ida"
-        if idat_exe.exists():
-            ida_exe = idat_exe
-        else:
-            ida_exe = ida_gui_exe
-            env.setdefault("QT_QPA_PLATFORM", "offscreen")
-    elif ida_root is not None:
-        ida_exe = ida_root / "ida"
+    if os.name == "nt":
+        names = (
+            ("idat64.exe", "idat.exe", "ida64.exe", "ida.exe")
+            if session.mode == "headless"
+            else ("ida64.exe", "ida.exe")
+        )
     else:
-        ida_exe = Path("idat" if session.mode == "headless" else "ida")
+        names = (
+            ("idat", "idat64", "ida", "ida64")
+            if session.mode == "headless"
+            else ("ida", "ida64")
+        )
+
+    ida_exe = None
+    if ida_root is not None:
+        for name in names:
+            candidate = ida_root / name
+            if candidate.exists():
+                ida_exe = candidate
+                break
+    else:
+        for name in names:
+            found = shutil.which(name)
+            if found:
+                ida_exe = Path(found)
+                break
+
+    if ida_exe is None:
+        ida_exe = (ida_root / names[0]) if ida_root is not None else Path(names[0])
+        if session.mode == "headless":
+            env.setdefault("QT_QPA_PLATFORM", "offscreen")
 
     if not ida_exe.exists():
         raise FileNotFoundError(
@@ -148,7 +174,7 @@ def start_background(
             f"  export IDA_INSTALL_DIR=/opt/ida-pro-9.4\n"
             f"Or pass --ida-install-dir to the command."
         )
-    if ida_exe.name not in {"ida", "idat", "ida64", "idat64"}:
+    if ida_exe.stem.lower() not in {"ida", "idat", "ida64", "idat64"}:
         raise RuntimeError(f"Refusing to launch non-IDA executable: {ida_exe}")
 
     # Build command to launch IDA with the plugin

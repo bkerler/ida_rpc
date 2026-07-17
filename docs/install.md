@@ -8,7 +8,9 @@
 
 ## Set IDA_INSTALL_DIR
 
-Point this at your IDA Pro installation directory (the one containing `ida` and `idat`):
+Point this at your IDA Pro installation directory. On Linux/macOS it contains
+`ida` and `idat`; Windows installations commonly contain `ida64.exe` and
+`idat64.exe`:
 
 ```bash
 # Add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
@@ -85,7 +87,7 @@ ln -s /path/to/ida-rpc/ida_rpc_plugin.py $(IDA_INSTALL_DIR)/plugins/ida_rpc_plug
 
 ```bash
 ida-rpc --version
-# Should print: ida-rpc, version 0.1.6
+# Should print: ida-rpc, version 0.1.7
 ```
 
 ## What Gets Installed

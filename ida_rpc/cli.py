@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import tempfile
 import traceback
 from pathlib import Path
 from typing import Any
@@ -37,7 +38,7 @@ from ida_rpc.client import DaemonError, DaemonNotRunning
 
 
 CORE_CAPABILITIES = {
-    "purpose": "IDA Pro reverse-engineering RPC over a local Unix socket",
+    "purpose": "IDA Pro reverse-engineering RPC over a local socket",
     "output": "Automation commands print human-readable text to stdout by default. Use --json for JSON output or set IDA_RPC_JSON=1.",
     "project_option": "--project <idb>; falls back to IDA_RPC_PROJECT",
     "start_requires": "--arch <arch> is required for raw/unknown binaries; optional for ELF and PE files where the architecture is read from the header",
@@ -928,7 +929,7 @@ def list_projects():
     """List all active ida-rpc projects / daemons."""
     from ida_rpc.daemon import is_running
 
-    socks = sorted(Path("/tmp").glob("ida-rpc-*.sock"))
+    socks = sorted(Path(tempfile.gettempdir()).glob("ida-rpc-*.sock"))
     results = []
     for sock in socks:
         running = is_running(sock)
@@ -1009,7 +1010,7 @@ def stop(project: str | None, stop_all: bool, clean: bool):
     from ida_rpc.daemon import clean_companion_files, stop_daemon
 
     if stop_all:
-        socks = sorted(Path("/tmp").glob("ida-rpc-*.sock"))
+        socks = sorted(Path(tempfile.gettempdir()).glob("ida-rpc-*.sock"))
         stopped = []
         failed = []
         not_running = []

@@ -1,7 +1,7 @@
 # (c) B. Kerler 2026, MIT license
 """Integration tests for ida-rpc tool handlers via live daemon.
 
-These tests communicate with a running ida-rpc daemon over its Unix socket.
+These tests communicate with a running ida-rpc daemon over its local socket.
 They do NOT import IDA modules directly — everything goes through the RPC client.
 
 To run these tests:

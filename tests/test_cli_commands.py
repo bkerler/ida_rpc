@@ -753,10 +753,11 @@ class TestStopAll:
 
         # Patch glob to use our temp dir
         import pathlib
+        import tempfile
         original_glob = pathlib.Path.glob
 
         def fake_glob(self, pattern):
-            if pattern == "ida-rpc-*.sock" and str(self) == "/tmp":
+            if pattern == "ida-rpc-*.sock" and str(self) == tempfile.gettempdir():
                 return sorted(
                     p for p in tmp_path.iterdir()
                     if p.name.startswith("ida-rpc-") and p.name.endswith(".sock")
@@ -783,10 +784,11 @@ class TestStopAll:
         sock1.write_text("")
 
         import pathlib
+        import tempfile
         original_glob = pathlib.Path.glob
 
         def fake_glob(self, pattern):
-            if pattern == "ida-rpc-*.sock" and str(self) == "/tmp":
+            if pattern == "ida-rpc-*.sock" and str(self) == tempfile.gettempdir():
                 return sorted(
                     p for p in tmp_path.iterdir()
                     if p.name.startswith("ida-rpc-") and p.name.endswith(".sock")

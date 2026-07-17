@@ -6,8 +6,10 @@
 
 A JSON-RPC daemon for IDA Pro, inspired by [ghidra-rpc](https://github.com/cellebrite-labs/ghidra-rpc).
 
-Exposes IDA Pro reverse engineering capabilities over a Unix domain socket for
+Exposes IDA Pro reverse engineering capabilities over a local socket for
 integration with LLM agents, automation pipelines, and multi-agent setups.
+Linux and macOS use Unix domain sockets; Windows uses loopback TCP because
+``socket.AF_UNIX`` is not available in all supported Windows IDA/Python setups.
 
 ## Features
 

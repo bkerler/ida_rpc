@@ -1,16 +1,16 @@
 # (c) B. Kerler 2026, MIT license
-"""Client for communicating with the ida-rpc daemon over Unix socket."""
+"""Client for communicating with the local ida-rpc daemon."""
 
 from __future__ import annotations
 
 import errno
 import json
-import select
 import socket
 import uuid
 from pathlib import Path
 
 from ida_rpc import session as session_mod
+from ida_rpc.transport import endpoint_address
 
 
 class DaemonNotRunning(Exception):
@@ -68,26 +68,21 @@ def send_request(
     }
     request_bytes = (json.dumps(request) + "\n").encode("utf-8")
 
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    address = endpoint_address(socket_path)
+    family = socket.AF_UNIX if isinstance(address, str) else socket.AF_INET
+    sock = socket.socket(family, socket.SOCK_STREAM)
     try:
         sock.settimeout(effective_timeout)
-        sock.setblocking(False)
-        rc = sock.connect_ex(str(socket_path))
-        if rc in (errno.ENOENT, errno.ECONNREFUSED):
-            raise DaemonNotRunning(f"Cannot connect to daemon at {socket_path}: {errno.errorcode.get(rc, rc)}")
-        if rc not in (0, errno.EINPROGRESS, errno.EAGAIN, errno.EWOULDBLOCK):
-            raise OSError(rc, errno.errorcode.get(rc, "connect_ex failed"))
-        if rc != 0:
-            _, writable, exceptional = select.select([], [sock], [sock], effective_timeout)
-            if exceptional or not writable:
-                raise TimeoutError(f"Timed out connecting to daemon at {socket_path}")
-            err = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
-            if err in (errno.ENOENT, errno.ECONNREFUSED):
-                raise DaemonNotRunning(f"Cannot connect to daemon at {socket_path}: {errno.errorcode.get(err, err)}")
-            if err:
-                raise OSError(err, errno.errorcode.get(err, "socket connect failed"))
-        sock.setblocking(True)
-        sock.settimeout(effective_timeout)
+        sock.connect(address)
+    except (FileNotFoundError, ConnectionRefusedError) as exc:
+        sock.close()
+        raise DaemonNotRunning(f"Cannot connect to daemon at {socket_path}: {exc}") from exc
+    except OSError as exc:
+        if exc.errno in (errno.ENOENT, errno.ECONNREFUSED):
+            sock.close()
+            raise DaemonNotRunning(f"Cannot connect to daemon at {socket_path}: {exc}") from exc
+        sock.close()
+        raise
     except Exception:
         sock.close()
         raise

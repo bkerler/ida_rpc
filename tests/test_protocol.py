@@ -1,5 +1,5 @@
 # (c) B. Kerler 2026, MIT license
-"""Tests for the Unix socket protocol and server dispatch."""
+"""Tests for the local socket protocol and server dispatch."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+from ida_rpc.transport import endpoint_address
 
 
 # We need to test the server without IDA, so mock the tool registration
@@ -35,9 +36,11 @@ def _send_request(sock_path: Path, cmd: str, args: dict | None = None) -> dict:
         "cmd": cmd,
         "args": args or {},
     }
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    address = endpoint_address(sock_path)
+    family = socket.AF_UNIX if isinstance(address, str) else socket.AF_INET
+    s = socket.socket(family, socket.SOCK_STREAM)
     s.settimeout(5)
-    s.connect(str(sock_path))
+    s.connect(address)
     s.sendall((json.dumps(request) + "\n").encode())
     buf = b""
     while b"\n" not in buf:
@@ -117,9 +120,11 @@ class TestProtocol:
         assert not self.sock_path.exists()
 
     def test_invalid_json(self):
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        address = endpoint_address(self.sock_path)
+        family = socket.AF_UNIX if isinstance(address, str) else socket.AF_INET
+        s = socket.socket(family, socket.SOCK_STREAM)
         s.settimeout(5)
-        s.connect(str(self.sock_path))
+        s.connect(address)
         s.sendall(b"not valid json\n")
         buf = b""
         while b"\n" not in buf:
@@ -135,9 +140,11 @@ class TestProtocol:
     def test_request_id_echoed(self):
         req_id = "test-id-12345"
         request = {"id": req_id, "cmd": "ping", "args": {}}
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        address = endpoint_address(self.sock_path)
+        family = socket.AF_UNIX if isinstance(address, str) else socket.AF_INET
+        s = socket.socket(family, socket.SOCK_STREAM)
         s.settimeout(5)
-        s.connect(str(self.sock_path))
+        s.connect(address)
         s.sendall((json.dumps(request) + "\n").encode())
         buf = b""
         while b"\n" not in buf:

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import socket
+import tempfile
 import threading
 import time
 import uuid
@@ -18,6 +19,7 @@ from ida_rpc.client import (
     _SOCKET_TIMEOUT_BUFFER,
     _derive_socket_timeout,
 )
+from ida_rpc.transport import create_server_socket, remove_endpoint_marker
 
 
 class TestClient:
@@ -28,9 +30,7 @@ class TestClient:
         self.sock_path = tmp_path / "echo.sock"
 
         def echo_server():
-            srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            srv.bind(str(self.sock_path))
-            srv.listen(5)
+            srv = create_server_socket(self.sock_path)
             srv.settimeout(5)
             try:
                 while True:
@@ -53,6 +53,7 @@ class TestClient:
                 pass
             finally:
                 srv.close()
+                remove_endpoint_marker(self.sock_path)
 
         self.server_thread = threading.Thread(target=echo_server, daemon=True)
         self.server_thread.start()
@@ -194,7 +195,7 @@ class TestSession:
         a = socket_path_for_project(p)
         b = socket_path_for_project(p)
         assert a == b
-        assert str(a).startswith("/tmp/ida-rpc-")
+        assert str(a).startswith(str(Path(tempfile.gettempdir()) / "ida-rpc-"))
         assert str(a).endswith(".sock")
 
     def test_save_and_load(self, tmp_path):

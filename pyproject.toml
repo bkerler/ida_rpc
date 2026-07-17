@@ -1,7 +1,7 @@
 [project]
 name = "ida-rpc"
-version = "0.1.6"
-description = "CLI-driven daemon exposing IDA Pro reverse engineering capabilities over a Unix domain socket"
+version = "0.1.7"
+description = "CLI-driven daemon exposing IDA Pro reverse engineering capabilities over a local socket"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
