@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from ida_rpc.daemon import start_background
@@ -12,7 +13,7 @@ from ida_rpc.session import Session
 def test_binary_launch_lets_ida_choose_loader_by_default(tmp_path, monkeypatch):
     ida_dir = tmp_path / "ida"
     ida_dir.mkdir()
-    idat_exe = ida_dir / "idat"
+    idat_exe = ida_dir / ("idat.exe" if os.name == "nt" else "idat")
     idat_exe.write_text("#!/bin/sh\n")
 
     binary = tmp_path / "raw.bin"
@@ -50,6 +51,8 @@ def test_binary_launch_lets_ida_choose_loader_by_default(tmp_path, monkeypatch):
     assert "-parm" in captured["cmd"]
     assert captured["cmd"][0] == str(idat_exe)
     assert "-b300000" in captured["cmd"]
+    if os.name == "nt":
+        assert "--accept-eula" in captured["cmd"]
     assert "-TBinary file" not in captured["cmd"]
     assert f"-o{project}" in captured["cmd"]
     assert str(binary) in captured["cmd"]
@@ -58,7 +61,7 @@ def test_binary_launch_lets_ida_choose_loader_by_default(tmp_path, monkeypatch):
 def test_explicit_loader_is_passed_to_ida(tmp_path, monkeypatch):
     ida_dir = tmp_path / "ida"
     ida_dir.mkdir()
-    idat_exe = ida_dir / "idat"
+    idat_exe = ida_dir / ("idat.exe" if os.name == "nt" else "idat")
     idat_exe.write_text("#!/bin/sh\n")
 
     binary = tmp_path / "loader.bin"

@@ -216,6 +216,12 @@ def start_background(
         cmd.append(f"-o{session.project_idb}")
         cmd.append(str(binary_path))
 
+    # IDA 9.4 refuses autonomous/batch startup until its EULA has been
+    # acknowledged. Keep this after the input path, matching IDA's documented
+    # command-line form and the working Windows invocation.
+    if session.mode == "headless" and os.name == "nt":
+        cmd.append("--accept-eula")
+
     # The plugin auto-starts the server when loaded
     with open(log_path, "a") as log_fh:
         log_fh.write("ida-rpc launch command: " + " ".join(cmd) + "\n")

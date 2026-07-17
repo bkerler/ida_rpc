@@ -162,7 +162,10 @@ def _configure_segments_for_arch(arch: str) -> None:
 
         if arch_lower in {"aarch64", "arm64"}:
             try:
-                ida_segment.set_default_sreg_value(seg, "T", 0)
+                # IDA 9.4 exposes this through ida_segregs and expects the
+                # numeric segment-register index, not the register name.
+                regnum = ida_idp.ph.regnames.index("T")
+                ida_segregs.set_default_sreg_value_ea(seg.start_ea, regnum, 0)
             except Exception:
                 pass
         elif arch_lower in {"mips", "mipsel", "mipsl", "mipsb"}:
