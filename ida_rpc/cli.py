@@ -150,6 +150,11 @@ LOADER_ALIASES = {
 }
 
 IDA_PROCESSOR_ALIASES = {
+    # IDA selects the ARM processor module for Thumb/Thumb-2 binaries; the
+    # instruction set is a segment/register mode, not a separate processor
+    # name.  Passing -pthumb makes IDA fail before the RPC plugin starts.
+    "thumb": "arm",
+    "thumb2": "arm",
     "aarch64": "arm",
     "arm64": "arm",
     "armv8": "arm",
@@ -739,7 +744,13 @@ def start(
         processor_name = _resolve_processor_name(arch)
         extra_ida_args.append(f"-p{processor_name}")
     if base is not None and imports_binary:
-        extra_ida_args.append(f"-b{base:x}")
+        # IDA's raw-loader option is a segment base and converts it to a
+        # linear address by shifting left four bits.  Convert the user-facing
+        # linear address back to that representation; otherwise a valid
+        # 32-bit firmware base such as 0x48200000 becomes 0x482000000.
+        if base < 0 or base % 0x10:
+            _error("InvalidParameter", "--base must be a non-negative 16-byte-aligned address")
+        extra_ida_args.append(f"-b{base >> 4:#x}")
     loader_name = _resolve_loader_name(loader)
     if loader_name and imports_binary:
         extra_ida_args.append(f"-T{loader_name}")

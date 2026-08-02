@@ -256,8 +256,14 @@ def stop_daemon(socket_path: Path) -> bool:
     except DaemonNotRunning:
         return False
     except Exception as e:
-        from ida_rpc.client import _get_logger
-        _get_logger().warning(f"Unexpected error stopping daemon: {e}")
+        # The client intentionally has no logging helper.  Keep stop() a
+        # best-effort lifecycle operation and report through the standard
+        # library logger instead of raising a secondary ImportError while
+        # handling a stale/unresponsive socket.
+        import logging
+        logging.getLogger("ida-rpc").warning(
+            "Unexpected error stopping daemon: %s", e
+        )
         return True
 
 
