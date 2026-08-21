@@ -33,7 +33,7 @@ def _handle_decompile(ctx, args: dict) -> dict:
     if not ida_hexrays.init_hexrays_plugin():
         raise RuntimeError("Failed to initialize Hex-Rays decompiler.")
 
-    cfunc = ida_hexrays.decompile(func_ea)
+    cfunc = ida_hexrays.decompile_function(func_ea)
     if cfunc is None:
         return {
             "name": ida_funcs.get_func_name(func_ea),
@@ -93,7 +93,7 @@ def _handle_decompile_all(ctx, args: dict) -> dict:
                 continue
 
             try:
-                cfunc = ida_hexrays.decompile(func_ea)
+                cfunc = ida_hexrays.decompile_function(func_ea)
                 if cfunc is None:
                     errors.append({
                         "address": f"0x{func_ea:x}",
@@ -151,7 +151,7 @@ def _handle_decompile_lvars(ctx, args: dict) -> dict:
     if not ida_hexrays.init_hexrays_plugin():
         raise RuntimeError("Failed to initialize Hex-Rays decompiler.")
 
-    cfunc = ida_hexrays.decompile(func_ea)
+    cfunc = ida_hexrays.decompile_function(func_ea)
     if cfunc is None:
         raise RuntimeError("Decompilation failed")
 
@@ -340,13 +340,12 @@ def _handle_decompile_microcode(ctx, args: dict) -> dict:
     if not ida_hexrays.init_hexrays_plugin():
         raise RuntimeError("Failed to initialize Hex-Rays decompiler.")
 
-    func = ida_funcs.get_func(func_ea)
-    if func is None:
+    if ida_funcs.get_func_start(func_ea) == ida_idaapi.BADADDR:
         raise ValueError(f"No function at 0x{func_ea:x}")
-    mbr = ida_hexrays.mba_ranges_t(func)
+    dcr = ida_hexrays.decomp_ranges_t(func_ea)
     hf = ida_hexrays.hexrays_failure_t()
     ml = ida_hexrays.mlist_t()
-    mba = ida_hexrays.gen_microcode(mbr, hf, ml, 0, maturity)
+    mba = ida_hexrays.gen_microcode(dcr, hf, ml, 0, maturity)
     if mba is None:
         raise RuntimeError("Microcode generation failed")
 
@@ -402,7 +401,7 @@ def _handle_decompiler_xrefs(ctx, args: dict) -> dict:
     if not ida_hexrays.init_hexrays_plugin():
         raise RuntimeError("Failed to initialize Hex-Rays decompiler.")
 
-    cfunc = ida_hexrays.decompile(func_ea)
+    cfunc = ida_hexrays.decompile_function(func_ea)
     if cfunc is None:
         raise RuntimeError("Decompilation failed")
 

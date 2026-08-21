@@ -223,22 +223,28 @@ def start_background(
         cmd.append("--accept-eula")
 
     # The plugin auto-starts the server when loaded
-    with open(log_path, "a") as log_fh:
-        log_fh.write("ida-rpc launch command: " + " ".join(cmd) + "\n")
-        log_fh.flush()
-        subprocess.Popen(
-            cmd,
-            stdout=log_fh,
-            stderr=log_fh,
-            start_new_session=True,
-            env=env,
-        )
+    try:
+        with open(log_path, "a") as log_fh:
+            log_fh.write("ida-rpc launch command: " + " ".join(cmd) + "\n")
+            log_fh.flush()
+            subprocess.Popen(
+                cmd,
+                stdout=log_fh,
+                stderr=log_fh,
+                start_new_session=True,
+                env=env,
+            )
+    except Exception:
+        session_mod.remove(session.project_idb)
+        raise
 
     deadline = time.time() + timeout
     while time.time() < deadline:
         if is_running(session.socket_path):
             return
         time.sleep(0.5)
+
+    session_mod.remove(session.project_idb)
 
     raise TimeoutError(
         f"Daemon did not start within {timeout}s. "

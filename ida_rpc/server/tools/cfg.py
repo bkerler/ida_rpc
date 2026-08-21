@@ -26,11 +26,10 @@ def _handle_basic_blocks(ctx, args: dict) -> dict:
         raise ValueError("Missing required argument: func")
 
     func_ea = ctx.find_function(func_name)
-    func = ida_funcs.get_func(func_ea)
-    if func is None:
+    if ida_funcs.get_func_start(func_ea) == ida_idaapi.BADADDR:
         raise ValueError(f"Function not found at 0x{func_ea:x}")
 
-    fc = ida_gdl.FlowChart(func)
+    fc = ida_gdl.FlowChart(bounds=(func_ea, func_ea + ida_funcs.calc_func_size_ea(func_ea)))
     blocks = []
     total_edges = 0
 

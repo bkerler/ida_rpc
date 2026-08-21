@@ -18,18 +18,17 @@ def _ida():
 def _get_func_and_frame(ctx, func_name: str):
     ida_funcs, ida_frame, ida_typeinf, ida_idaapi, idautils = _ida()
     func_ea = ctx.find_function(func_name)
-    func = ida_funcs.get_func(func_ea)
-    if func is None:
+    if ida_funcs.get_func_start(func_ea) == ida_idaapi.BADADDR:
         raise ValueError(f"Function not found at 0x{func_ea:x}")
-    return func_ea, func
+    return func_ea
 
 
-def _iter_frame_members(func):
-    """Yield frame member dicts from a func_t."""
+def _iter_frame_members(func_ea):
+    """Yield frame member dicts using the IDA 9.x EA-based frame API."""
     ida_funcs, ida_frame, ida_typeinf, ida_idaapi, idautils = _ida()
 
     tif = ida_typeinf.tinfo_t()
-    if not ida_frame.get_func_frame(tif, func):
+    if not ida_frame.get_func_frame_ea(tif, func_ea):
         return
 
     udt = ida_typeinf.udt_type_data_t()
@@ -58,18 +57,18 @@ def _handle_function_frame(ctx, args: dict) -> dict:
     if not func_name:
         raise ValueError("Missing required argument: func")
 
-    func_ea, func = _get_func_and_frame(ctx, func_name)
+    func_ea = _get_func_and_frame(ctx, func_name)
     name = ida_funcs.get_func_name(func_ea) or f"sub_{func_ea:x}"
 
     frame_size = 0
     ret_size = 0
     try:
-        frame_size = ida_frame.get_frame_size(func)
-        ret_size = ida_frame.get_frame_retsize(func)
+        frame_size = ida_frame.get_frame_size_ea(func_ea)
+        ret_size = ida_frame.get_frame_retsize_ea(func_ea)
     except Exception:
         pass
 
-    members = list(_iter_frame_members(func))
+    members = list(_iter_frame_members(func_ea))
 
     return {
         "name": name,
@@ -88,21 +87,21 @@ def _handle_list_stack_vars(ctx, args: dict) -> dict:
     if not func_name:
         raise ValueError("Missing required argument: func")
 
-    func_ea, func = _get_func_and_frame(ctx, func_name)
+    func_ea = _get_func_and_frame(ctx, func_name)
     name = ida_funcs.get_func_name(func_ea) or f"sub_{func_ea:x}"
 
     # Frame layout offsets (in bytes)
     # frame_off_args returns offset where arguments start
     # frame_off_lvars returns offset where local variables start
     try:
-        args_offset = ida_frame.frame_off_args(func)
-        lvars_offset = ida_frame.frame_off_lvars(func)
+        args_offset = ida_frame.frame_off_args_ea(func_ea)
+        lvars_offset = ida_frame.frame_off_lvars_ea(func_ea)
     except Exception:
         args_offset = None
         lvars_offset = None
 
     vars_list = []
-    for m in _iter_frame_members(func):
+    for m in _iter_frame_members(func_ea):
         var_type = "unknown"
         if args_offset is not None and lvars_offset is not None:
             if m["offset"] >= args_offset:
@@ -141,11 +140,11 @@ def _handle_rename_stack_var(ctx, args: dict) -> dict:
     if not new_name:
         raise ValueError("Missing required argument: new_name")
 
-    func_ea, func = _get_func_and_frame(ctx, func_name)
+    func_ea = _get_func_and_frame(ctx, func_name)
 
     # Resolve offset if old_name given
     if offset < 0 and old_name:
-        for m in _iter_frame_members(func):
+        for m in _iter_frame_members(func_ea):
             if m["name"] == old_name:
                 offset = m["offset"]
                 break
@@ -155,7 +154,8 @@ def _handle_rename_stack_var(ctx, args: dict) -> dict:
     if offset < 0:
         raise ValueError("Missing or invalid required argument: offset (or old_name)")
 
-    frame_id = ida_frame.get_frame(func)
+    import idc
+    frame_id = idc.get_frame_id(func_ea)
     if frame_id == ida_idaapi.BADADDR:
         raise ValueError("Function has no frame")
 
@@ -186,11 +186,11 @@ def _handle_set_stack_var_type(ctx, args: dict) -> dict:
     if not new_type:
         raise ValueError("Missing required argument: type")
 
-    func_ea, func = _get_func_and_frame(ctx, func_name)
+    func_ea = _get_func_and_frame(ctx, func_name)
 
     # Resolve offset if name given
     if offset < 0 and var_name:
-        for m in _iter_frame_members(func):
+        for m in _iter_frame_members(func_ea):
             if m["name"] == var_name:
                 offset = m["offset"]
                 break
@@ -205,7 +205,7 @@ def _handle_set_stack_var_type(ctx, args: dict) -> dict:
         raise ValueError(f"Failed to parse type: {new_type}")
 
     def do_set():
-        res = ida_frame.set_frame_member_type(func, offset, tif)
+        res = ida_frame.set_frame_member_type_ea(func_ea, offset, tif)
         return {
             "success": res,
             "address": f"0x{func_ea:x}",
@@ -225,13 +225,15 @@ def _handle_list_reg_vars(ctx, args: dict) -> dict:
     if not func_name:
         raise ValueError("Missing required argument: func")
 
-    func_ea, func = _get_func_and_frame(ctx, func_name)
+    func_ea = _get_func_and_frame(ctx, func_name)
     name = ida_funcs.get_func_name(func_ea) or f"sub_{func_ea:x}"
 
     regvars = []
     try:
-        for i in range(func.regvarqty):
-            rv = func.get_regvar(i)
+        for i in range(ida_frame.get_func_regvar_qty(func_ea)):
+            rv = ida_frame.regvar_t()
+            if not ida_frame.get_func_regvar(rv, func_ea, i):
+                continue
             if rv:
                 regvars.append({
                     "canonical": rv.canon or "",
@@ -261,11 +263,11 @@ def _handle_stack_var_xrefs(ctx, args: dict) -> dict:
     if not func_name:
         raise ValueError("Missing required argument: func")
 
-    func_ea, func = _get_func_and_frame(ctx, func_name)
+    func_ea = _get_func_and_frame(ctx, func_name)
 
     # Resolve offset if name given
     if offset < 0 and var_name:
-        for m in _iter_frame_members(func):
+        for m in _iter_frame_members(func_ea):
             if m["name"] == var_name:
                 offset = m["offset"]
                 break
@@ -276,7 +278,7 @@ def _handle_stack_var_xrefs(ctx, args: dict) -> dict:
         raise ValueError("Missing or invalid required argument: offset (or name)")
 
     xrefs = ida_frame.xreflist_t()
-    ida_frame.build_stkvar_xrefs(xrefs, func, offset)
+    ida_frame.build_stkvar_xrefs_ea(xrefs, func_ea, offset, offset + 1)
 
     results = []
     for i in range(len(xrefs)):

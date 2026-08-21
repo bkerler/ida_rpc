@@ -11,12 +11,11 @@ def _ida():
     import ida_bytes
     import ida_idaapi
     import idautils
-    import idc
-    return ida_segment, ida_bytes, ida_idaapi, idautils, idc
+    return ida_segment, ida_bytes, ida_idaapi, idautils
 
 
 def _handle_add_segment(ctx, args: dict) -> dict:
-    ida_segment, ida_bytes, ida_idaapi, _, idc = _ida()
+    ida_segment, ida_bytes, ida_idaapi, _ = _ida()
 
     _ = args.get("binary", "")
     start_str = args.get("start", "")
@@ -68,15 +67,16 @@ def _handle_add_segment(ctx, args: dict) -> dict:
 
     def do_add():
         # Check for overlap
-        existing = ida_segment.getseg(start)
-        if existing is not None:
+        if ida_segment.get_segment_ea(start) != ida_idaapi.BADADDR:
             raise ValueError(f"A segment already exists at 0x{start:x}")
 
         success = ida_segment.add_segm(align, start, end, name or f"seg_{start:x}", sclass, flags)
         if not success:
             raise RuntimeError(f"Failed to add segment 0x{start:x}-0x{end:x}")
 
-        seg = ida_segment.getseg(start)
+        seg = ida_segment.segment_info_t()
+        if not ida_segment.get_segment_info(seg, start, ida_segment.GSI_ALL):
+            raise RuntimeError(f"Created segment for 0x{start:x}, but IDA did not return it")
 
         # Auto-configure bitness and permissions based on arch
         arch = getattr(ctx.session, "arch", None)
@@ -94,13 +94,15 @@ def _handle_add_segment(ctx, args: dict) -> dict:
                 "ppc": 1, "powerpc": 1, "riscv": 1, "risc-v": 1, "riscv32": 1,
             }
             bitness = bitness_map.get(arch_lower, 1)
-            ida_segment.set_segm_addressing(seg, bitness)
+            ida_segment.set_segment_addressing(start, bitness)
             # Set read + execute for code segments
             perm = ida_segment.SEGPERM_READ | ida_segment.SEGPERM_EXEC
-            idc.set_segm_attr(start, idc.SEGATTR_PERM, perm)
+            seg.set_perm(perm)
+            if not ida_segment.set_segment_info(seg):
+                raise RuntimeError(f"Failed to set permissions for segment at 0x{start:x}")
 
         return {
-            "name": ida_segment.get_segm_name(seg) or "",
+            "name": seg.get_name() or "",
             "start": f"0x{seg.start_ea:x}",
             "end": f"0x{seg.end_ea - 1:x}",
             "size": seg.size(),
@@ -113,7 +115,7 @@ def _handle_add_segment(ctx, args: dict) -> dict:
 
 
 def _handle_edit_segment(ctx, args: dict) -> dict:
-    ida_segment, ida_bytes, ida_idaapi, _, idc = _ida()
+    ida_segment, ida_bytes, ida_idaapi, _ = _ida()
 
     _ = args.get("binary", "")
     start_str = args.get("start", "")
@@ -128,20 +130,20 @@ def _handle_edit_segment(ctx, args: dict) -> dict:
         raise ValueError("Missing required argument: start")
 
     start = ctx.resolve_address(start_str)
-    seg = ida_segment.getseg(start)
-    if seg is None:
+    seg = ida_segment.segment_info_t()
+    if not ida_segment.get_segment_info(seg, start, ida_segment.GSI_ALL):
         raise ValueError(f"Segment not found at 0x{start:x}")
 
     def do_edit():
         changed = []
         if new_name:
-            ida_segment.set_segm_name(seg, new_name)
+            ida_segment.set_segment_name(start, new_name)
             changed.append("name")
         if new_class:
-            ida_segment.set_segm_class(seg, new_class)
+            ida_segment.set_segment_class(start, new_class)
             changed.append("class")
 
-        perm = seg.perm
+        perm = seg.get_perm()
         if perm_read is not None:
             if perm_read:
                 perm |= ida_segment.SEGPERM_READ
@@ -161,18 +163,20 @@ def _handle_edit_segment(ctx, args: dict) -> dict:
                 perm &= ~ida_segment.SEGPERM_EXEC
             changed.append("perm_exec")
         if changed:
-            idc.set_segm_attr(start, idc.SEGATTR_PERM, perm)
+            seg.set_perm(perm)
+            if not ida_segment.set_segment_info(seg):
+                raise RuntimeError(f"Failed to set permissions for segment at 0x{start:x}")
 
         if bitness is not None:
             # 0=16-bit, 1=32-bit, 2=64-bit
-            ida_segment.set_segm_addressing(seg, int(bitness))
+            ida_segment.set_segment_addressing(start, int(bitness))
             changed.append("bitness")
 
         return {
             "start": f"0x{seg.start_ea:x}",
             "end": f"0x{seg.end_ea - 1:x}",
-            "name": ida_segment.get_segm_name(seg) or "",
-            "class": ida_segment.get_segm_class(seg) or "",
+            "name": ida_segment.get_segment_name(start) or "",
+            "class": ida_segment.get_segment_class(start) or "",
             "changed": changed,
         }
 
@@ -182,7 +186,7 @@ def _handle_edit_segment(ctx, args: dict) -> dict:
 
 
 def _handle_delete_segment(ctx, args: dict) -> dict:
-    ida_segment, ida_bytes, ida_idaapi, _, _ = _ida()
+    ida_segment, ida_bytes, ida_idaapi, _ = _ida()
 
     _ = args.get("binary", "")
     start_str = args.get("start", "")
@@ -191,11 +195,11 @@ def _handle_delete_segment(ctx, args: dict) -> dict:
         raise ValueError("Missing required argument: start")
 
     start = ctx.resolve_address(start_str)
-    seg = ida_segment.getseg(start)
-    if seg is None:
+    seg = ida_segment.segment_info_t()
+    if not ida_segment.get_segment_info(seg, start, ida_segment.GSI_ALL):
         raise ValueError(f"Segment not found at 0x{start:x}")
 
-    name = ida_segment.get_segm_name(seg) or ""
+    name = seg.get_name() or ""
     end_ea = seg.end_ea
 
     def do_delete():
@@ -213,26 +217,26 @@ def _handle_delete_segment(ctx, args: dict) -> dict:
 
 
 def _handle_list_segments(ctx, args: dict) -> dict:
-    ida_segment, _, _, idautils, _ = _ida()
+    ida_segment, _, ida_idaapi, idautils = _ida()
 
     _ = args.get("binary", "")
 
     segments = []
     for seg_ea in idautils.Segments():
-        seg = ida_segment.getseg(seg_ea)
-        if seg is None:
+        seg = ida_segment.segment_info_t()
+        if not ida_segment.get_segment_info(seg, seg_ea, ida_segment.GSI_ALL):
             continue
-        perm = seg.perm
+        perm = seg.get_perm()
         segments.append({
-            "name": ida_segment.get_segm_name(seg) or "",
+            "name": seg.get_name() or "",
             "start": f"0x{seg.start_ea:x}",
             "end": f"0x{seg.end_ea - 1:x}",
-            "size": seg.size(),
+            "size": seg.end_ea - seg.start_ea,
             "read": bool(perm & ida_segment.SEGPERM_READ),
             "write": bool(perm & ida_segment.SEGPERM_WRITE),
             "execute": bool(perm & ida_segment.SEGPERM_EXEC),
             "initialized": True,
-            "type": ida_segment.get_segm_class(seg) or "DEFAULT",
+            "type": seg.get_sclass() or "DEFAULT",
         })
 
     return {"segments": segments, "count": len(segments)}

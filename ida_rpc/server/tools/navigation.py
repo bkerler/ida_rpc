@@ -7,6 +7,8 @@ from ida_rpc.server.main import register_handler
 
 
 def _handle_goto(ctx, args: dict) -> dict:
+    if getattr(ctx.session, "mode", "headless") != "gui":
+        raise RuntimeError("The 'goto' command is only available in GUI mode")
     _ = args.get("binary", "")
     target = args.get("target", "")
     target_type = args.get("target_type", "function")

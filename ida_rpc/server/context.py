@@ -16,7 +16,6 @@ from typing import Callable
 from ida_rpc.session import Session
 
 try:
-    import ida_kernwin
     import ida_loader
     import ida_funcs
     import ida_auto
@@ -51,6 +50,7 @@ class IdaContext:
     def __init__(self, session: Session):
         self.session = session
         self._lock = threading.RLock()
+        self.gui = session.mode == "gui"
 
     def _ensure_analysis(self) -> None:
         """Wait for auto-analysis to complete if running inside IDA.
@@ -80,6 +80,9 @@ class IdaContext:
     def current_ea(self) -> int:
         if not INSIDE_IDA:
             raise RuntimeError("Not running inside IDA Pro")
+        if not self.gui:
+            raise RuntimeError("Current-screen navigation is only available in GUI mode")
+        import ida_kernwin
         return ida_kernwin.get_screen_ea()
 
     def resolve_address(self, addr_str: str) -> int:
@@ -102,9 +105,10 @@ class IdaContext:
         # Try as address first
         try:
             ea = self.resolve_address(name_or_address)
-            func = ida_funcs.get_func(ea)
-            if func:
-                return func.start_ea
+            import ida_idaapi
+            func_ea = ida_funcs.get_func_start(ea)
+            if func_ea != ida_idaapi.BADADDR:
+                return func_ea
         except ValueError:
             pass
 
@@ -144,13 +148,12 @@ class IdaContext:
 
         import ida_kernwin
 
-        # In IDA, the main thread is the one where the plugin init runs.
-        # We can detect if we're on it by checking if execute_sync works
-        # synchronously or by thread name heuristics.
-        # For safety, always use execute_sync when called from a thread
-        # that is not the main thread.
-        is_main = threading.current_thread() is threading.main_thread()
-        if is_main:
+        # Headless dispatch is already serialized on IDA's main thread by the
+        # synchronous server loop. GUI requests must cross the UI boundary;
+        # Python's process-main-thread identity is not an IDA UI-thread test.
+        if not self.gui:
+            return fn(*args, **kwargs)
+        if threading.current_thread() is threading.main_thread():
             return fn(*args, **kwargs)
 
         result_box = [None]
@@ -162,7 +165,8 @@ class IdaContext:
             except Exception as e:
                 exc_box[0] = e
 
-        ida_kernwin.execute_sync(wrapper, ida_kernwin.MFF_WRITE)
+        if not ida_kernwin.execute_sync(wrapper, ida_kernwin.MFF_WRITE):
+            raise RuntimeError("IDA did not execute the main-thread request")
         if exc_box[0] is not None:
             raise exc_box[0]
         return result_box[0]

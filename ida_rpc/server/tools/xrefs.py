@@ -51,20 +51,20 @@ def _handle_xrefs_to(ctx, args: dict) -> dict:
     for ref in idautils.CodeRefsTo(addr, 1):
         if len(xrefs) >= limit:
             break
-        from_func = ida_funcs.get_func(ref)
+        from_func = ida_funcs.get_func_start(ref)
         xrefs.append({
             "from_address": f"0x{ref:x}",
-            "from_function": ida_funcs.get_func_name(from_func.start_ea) if from_func else None,
+            "from_function": ida_funcs.get_func_name(from_func) if from_func != ida_idaapi.BADADDR else None,
             "type": "code",
         })
 
     for ref in idautils.DataRefsTo(addr):
         if len(xrefs) >= limit:
             break
-        from_func = ida_funcs.get_func(ref)
+        from_func = ida_funcs.get_func_start(ref)
         xrefs.append({
             "from_address": f"0x{ref:x}",
-            "from_function": ida_funcs.get_func_name(from_func.start_ea) if from_func else None,
+            "from_function": ida_funcs.get_func_name(from_func) if from_func != ida_idaapi.BADADDR else None,
             "type": "data",
         })
 
@@ -86,31 +86,32 @@ def _handle_xrefs_from(ctx, args: dict) -> dict:
     xrefs = []
 
     # Check if target is a function
-    func = ida_funcs.get_func(addr)
-    if func is not None:
+    func_ea = ida_funcs.get_func_start(addr)
+    if func_ea != ida_idaapi.BADADDR:
+        func_end = func_ea + ida_funcs.calc_func_size_ea(func_ea)
         # Iterate all instructions in the function
-        for head in idautils.Heads(func.start_ea, func.end_ea):
+        for head in idautils.Heads(func_ea, func_end):
             for ref in idautils.CodeRefsFrom(head, 0):
                 if len(xrefs) >= limit:
                     break
-                if no_stack and ida_funcs.get_func(ref) is None and ref == ida_idaapi.BADADDR:
+                if no_stack and ida_funcs.get_func_start(ref) == ida_idaapi.BADADDR and ref == ida_idaapi.BADADDR:
                     # Heuristic: skip stack references (IDA doesn't have a stack space concept like Ghidra)
                     continue
-                to_func = ida_funcs.get_func(ref)
+                to_func = ida_funcs.get_func_start(ref)
                 xrefs.append({
                     "from_address": f"0x{head:x}",
                     "to_address": f"0x{ref:x}",
-                    "to_function": ida_funcs.get_func_name(to_func.start_ea) if to_func else None,
+                    "to_function": ida_funcs.get_func_name(to_func) if to_func != ida_idaapi.BADADDR else None,
                     "type": "code",
                 })
             for ref in idautils.DataRefsFrom(head):
                 if len(xrefs) >= limit:
                     break
-                to_func = ida_funcs.get_func(ref)
+                to_func = ida_funcs.get_func_start(ref)
                 xrefs.append({
                     "from_address": f"0x{head:x}",
                     "to_address": f"0x{ref:x}",
-                    "to_function": ida_funcs.get_func_name(to_func.start_ea) if to_func else None,
+                    "to_function": ida_funcs.get_func_name(to_func) if to_func != ida_idaapi.BADADDR else None,
                     "type": "data",
                 })
             if len(xrefs) >= limit:
@@ -120,21 +121,21 @@ def _handle_xrefs_from(ctx, args: dict) -> dict:
         for ref in idautils.CodeRefsFrom(addr, 0):
             if len(xrefs) >= limit:
                 break
-            to_func = ida_funcs.get_func(ref)
+            to_func = ida_funcs.get_func_start(ref)
             xrefs.append({
                 "from_address": f"0x{addr:x}",
                 "to_address": f"0x{ref:x}",
-                "to_function": ida_funcs.get_func_name(to_func.start_ea) if to_func else None,
+                "to_function": ida_funcs.get_func_name(to_func) if to_func != ida_idaapi.BADADDR else None,
                 "type": "code",
             })
         for ref in idautils.DataRefsFrom(addr):
             if len(xrefs) >= limit:
                 break
-            to_func = ida_funcs.get_func(ref)
+            to_func = ida_funcs.get_func_start(ref)
             xrefs.append({
                 "from_address": f"0x{addr:x}",
                 "to_address": f"0x{ref:x}",
-                "to_function": ida_funcs.get_func_name(to_func.start_ea) if to_func else None,
+                "to_function": ida_funcs.get_func_name(to_func) if to_func != ida_idaapi.BADADDR else None,
                 "type": "data",
             })
 

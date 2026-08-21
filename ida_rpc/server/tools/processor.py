@@ -41,20 +41,7 @@ def _get_regnum(reg_name: str, ida_idp) -> int:
 
 
 def _get_sreg(ea: int, regnum: int, ida_idaapi):
-    """Read a segment register value, trying multiple IDA APIs."""
-    # Try idc.get_sreg (IDC compatibility)
-    try:
-        import idc
-        return idc.get_sreg(ea, regnum)
-    except Exception:
-        pass
-    # Try ida_bytes.get_sreg (older IDA)
-    try:
-        import ida_bytes
-        return ida_bytes.get_sreg(ea, regnum)
-    except AttributeError:
-        pass
-    # Try ida_segregs.get_sreg (IDA 9.x)
+    """Read a segment register using the IDA 9.x segment-register API."""
     try:
         import ida_segregs
         return ida_segregs.get_sreg(ea, regnum)
@@ -64,56 +51,19 @@ def _get_sreg(ea: int, regnum: int, ida_idaapi):
 
 
 def _get_sreg_tag():
-    try:
-        import ida_segregs
-        return ida_segregs.SR_user
-    except Exception:
-        pass
-    try:
-        import idc
-        return idc.SR_user
-    except Exception:
-        pass
-    return 2
+    import ida_segregs
+    return ida_segregs.SR_user
 
 
 def _set_sreg(ea: int, reg: str, regnum: int, value: int) -> tuple[bool, list[str]]:
-    """Set a segment register value, trying multiple IDA APIs."""
-    errors: list[str] = []
+    """Set a segment register value using the IDA 9.x API."""
     tag = _get_sreg_tag()
-    # Try idc.split_sreg_range (IDC compatibility)
-    try:
-        import idc
-        if idc.split_sreg_range(ea, reg, value, tag):
-            return True, errors
-        errors.append("idc.split_sreg_range returned False")
-    except Exception as exc:
-        errors.append(f"idc.split_sreg_range: {exc}")
-    # Try ida_bytes.split_sreg_range (older IDA)
-    try:
-        import ida_bytes
-        if ida_bytes.split_sreg_range(ea, regnum, value, tag):
-            return True, errors
-        errors.append("ida_bytes.split_sreg_range returned False")
-    except Exception as exc:
-        errors.append(f"ida_bytes.split_sreg_range: {exc}")
-    # Try ida_srarea.split_sreg_range (older IDA)
-    try:
-        import ida_srarea
-        if ida_srarea.split_sreg_range(ea, regnum, value, tag):
-            return True, errors
-        errors.append("ida_srarea.split_sreg_range returned False")
-    except Exception as exc:
-        errors.append(f"ida_srarea.split_sreg_range: {exc}")
-    # Try ida_segregs.split_sreg_range (IDA 9.x)
     try:
         import ida_segregs
-        if ida_segregs.split_sreg_range(ea, regnum, value, tag):
-            return True, errors
-        errors.append("ida_segregs.split_sreg_range returned False")
+        success = bool(ida_segregs.split_sreg_range(ea, regnum, value, tag))
+        return success, [] if success else ["ida_segregs.split_sreg_range returned False"]
     except Exception as exc:
-        errors.append(f"ida_segregs.split_sreg_range: {exc}")
-    return False, errors
+        return False, [f"ida_segregs.split_sreg_range: {exc}"]
 
 
 def _iter_sregs(ida_idp):
@@ -177,7 +127,8 @@ def _handle_get_processor_context(ctx, args: dict) -> dict:
     reg = args.get("register", "")
 
     if not address:
-        # Use current screen EA if available
+        if getattr(ctx.session, "mode", "headless") != "gui":
+            raise ValueError("Missing required argument: address in headless mode")
         try:
             import ida_kernwin
             ea = ida_kernwin.get_screen_ea()

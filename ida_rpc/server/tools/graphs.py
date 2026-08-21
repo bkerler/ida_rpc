@@ -24,16 +24,17 @@ def _handle_function_graph(ctx, args: dict) -> dict:
         raise ValueError("Missing required argument: func")
 
     func_ea = ctx.find_function(func_name)
-    func = ida_funcs.get_func(func_ea)
-    if func is None:
+    if ida_funcs.get_func_start(func_ea) == ida_idaapi.BADADDR:
         raise ValueError(f"Function not found at 0x{func_ea:x}")
+
+    end_ea = func_ea + ida_funcs.calc_func_size_ea(func_ea)
 
     # Generate to a temp file and read back
     fd, path = tempfile.mkstemp(suffix=".gdl")
     os.close(fd)
     try:
         title = ida_funcs.get_func_name(func_ea) or f"sub_{func_ea:x}"
-        res = ida_gdl.gen_flow_graph(path, title, func, func.start_ea, func.end_ea, 0)
+        res = ida_gdl.gen_flow_graph_ea(path, title, func_ea, func_ea, end_ea, 0)
         if not res:
             raise RuntimeError("Failed to generate function graph")
         with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -62,9 +63,9 @@ def _handle_call_graph(ctx, args: dict) -> dict:
     os.close(fd)
     try:
         if mode == "simple":
-            res = ida_gdl.gen_simple_call_chart(path, False, title, 0)
+            res = ida_gdl.gen_simple_call_chart(path, "", title, 0)
         else:
-            res = ida_gdl.gen_complex_call_chart(path, False, title, 0, 0, 0)
+            res = ida_gdl.gen_complex_call_chart(path, "", title, 0, 0, 0)
         if not res:
             raise RuntimeError("Failed to generate call graph")
         with open(path, "r", encoding="utf-8", errors="replace") as f:

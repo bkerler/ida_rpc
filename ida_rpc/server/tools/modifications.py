@@ -67,7 +67,7 @@ def _handle_rename_symbol(ctx, args: dict) -> dict:
 
     def do_rename():
         created_segment = None
-        if ida_segment.getseg(addr) is None:
+        if ida_segment.get_segment_ea(addr) == ida_idaapi.BADADDR:
             seg_start = addr & ~0xFFF
             seg_end = seg_start + 0x1000
             seg_name = f"ram_{seg_start:x}"
@@ -76,13 +76,14 @@ def _handle_rename_symbol(ctx, args: dict) -> dict:
                     f"Address 0x{addr:x} is unmapped and failed to create segment "
                     f"0x{seg_start:x}-0x{seg_end:x}"
                 )
-            seg = ida_segment.getseg(addr)
-            if seg is None:
+            seg = ida_segment.segment_info_t()
+            if not ida_segment.get_segment_info(seg, addr, ida_segment.GSI_ALL):
                 raise RuntimeError(f"Created segment for 0x{addr:x}, but IDA did not return it")
-            ida_segment.set_segm_addressing(seg, 1)
-            idc.set_segm_attr(seg_start, idc.SEGATTR_PERM, ida_segment.SEGPERM_READ | ida_segment.SEGPERM_WRITE)
+            ida_segment.set_segment_addressing(seg_start, 1)
+            seg.set_perm(ida_segment.SEGPERM_READ | ida_segment.SEGPERM_WRITE)
+            ida_segment.set_segment_info(seg)
             created_segment = {
-                "name": ida_segment.get_segm_name(seg) or seg_name,
+                "name": seg.get_name() or seg_name,
                 "start": f"0x{seg.start_ea:x}",
                 "end": f"0x{seg.end_ea:x}",
             }
@@ -216,7 +217,7 @@ def _handle_set_function_signature(ctx, args: dict) -> dict:
                 import ida_hexrays
 
                 if ida_hexrays.init_hexrays_plugin():
-                    cfunc = ida_hexrays.decompile(func_ea)
+                    cfunc = ida_hexrays.decompile_function(func_ea)
                     decompiler_sig = str(cfunc.type) if cfunc is not None else ""
                     if decompiler_sig:
                         return {
@@ -343,9 +344,9 @@ def _handle_create_function(ctx, args: dict) -> dict:
     requested_end = ctx.resolve_address(end_str) if end_str else None
 
     def do_create():
-        existing = ida_funcs.get_func(addr)
-        if existing is not None:
-            raise ValueError(f"A function already exists at 0x{addr:x}: {ida_funcs.get_func_name(existing.start_ea)}")
+        existing = ida_funcs.get_func_start(addr)
+        if existing != ida_idaapi.BADADDR:
+            raise ValueError(f"A function already exists at 0x{addr:x}: {ida_funcs.get_func_name(existing)}")
 
         # If bytes are not marked as code, try to create an instruction first
         import ida_bytes
@@ -357,7 +358,7 @@ def _handle_create_function(ctx, args: dict) -> dict:
             end = requested_end
         else:
             end = addr + 1
-            while ida_funcs.get_func(end) is None and end < addr + 0x10000:
+            while ida_funcs.get_func_start(end) == ida_idaapi.BADADDR and end < addr + 0x10000:
                 end += 1
 
         success = ida_funcs.add_func(addr, end)
@@ -368,14 +369,13 @@ def _handle_create_function(ctx, args: dict) -> dict:
         if not success:
             raise RuntimeError(f"Failed to create function at 0x{addr:x}")
 
-        func = ida_funcs.get_func(addr)
         if name:
             ida_name.set_name(addr, name)
 
         return {
-            "name": ida_funcs.get_func_name(func.start_ea),
-            "address": f"0x{func.start_ea:x}",
-            "size": func.size(),
+            "name": ida_funcs.get_func_name(addr),
+            "address": f"0x{addr:x}",
+            "size": ida_funcs.calc_func_size_ea(addr),
         }
 
     result = ctx.run_on_main_thread(do_create)
@@ -393,12 +393,11 @@ def _handle_delete_function(ctx, args: dict) -> dict:
         raise ValueError("Missing required argument: target")
 
     func_ea = ctx.find_function(target)
-    func = ida_funcs.get_func(func_ea)
-    if func is None:
+    if ida_funcs.get_func_start(func_ea) == ida_idaapi.BADADDR:
         raise ValueError(f"Function not found: {target}")
 
     old_name = ida_funcs.get_func_name(func_ea)
-    old_size = func.size()
+    old_size = ida_funcs.calc_func_size_ea(func_ea)
 
     def do_delete():
         success = ida_funcs.del_func(func_ea)
@@ -426,17 +425,16 @@ def _handle_set_thunk(ctx, args: dict) -> dict:
         raise ValueError("Missing required argument: target")
 
     func_ea = ctx.find_function(target)
-    func = ida_funcs.get_func(func_ea)
-    if func is None:
+    if ida_funcs.get_func_start(func_ea) == ida_idaapi.BADADDR:
         raise ValueError(f"Function not found: {target}")
 
-    old_flags = func.flags
+    old_flags = ida_funcs.get_func_flags(func_ea)
     FUNC_THUNK = getattr(ida_funcs, "FUNC_THUNK", 0x00000080)
 
     def do_set():
         if clear:
             new_flags = old_flags & ~FUNC_THUNK
-            idc.set_func_flags(func_ea, new_flags)
+            ida_funcs.set_func_flags(func_ea, new_flags)
             return {
                 "address": f"0x{func_ea:x}",
                 "name": ida_funcs.get_func_name(func_ea),
@@ -445,7 +443,7 @@ def _handle_set_thunk(ctx, args: dict) -> dict:
             }
         else:
             new_flags = old_flags | FUNC_THUNK
-            idc.set_func_flags(func_ea, new_flags)
+            ida_funcs.set_func_flags(func_ea, new_flags)
             result = {
                 "address": f"0x{func_ea:x}",
                 "name": ida_funcs.get_func_name(func_ea),

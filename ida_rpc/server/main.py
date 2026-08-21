@@ -17,7 +17,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from ida_rpc.session import Session
+from ida_rpc.session import Session, remove as remove_session
 from ida_rpc.transport import create_server_socket, remove_endpoint_marker
 
 logger = logging.getLogger("ida-rpc.server")
@@ -223,5 +223,8 @@ def run_server(session: Session, ctx: Any, *, synchronous: bool = False) -> None
     finally:
         server_sock.close()
         remove_endpoint_marker(sock_path)
+        # Session state describes a live daemon.  Do not leave a normal stop
+        # looking like an active project to status/restart callers.
+        remove_session(session.project_idb)
         logger.info("Server shut down.")
         print("Server shut down.", file=sys.stderr)

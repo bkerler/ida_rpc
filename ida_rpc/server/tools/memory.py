@@ -205,15 +205,15 @@ def _handle_memory_map(ctx, args: dict) -> dict:
 
     segments = []
     for seg_ea in idautils.Segments():
-        seg = ida_segment.getseg(seg_ea)
-        if seg is None:
+        seg = ida_segment.segment_info_t()
+        if not ida_segment.get_segment_info(seg, seg_ea, ida_segment.GSI_ALL):
             continue
-        perm = seg.perm
+        perm = seg.get_perm()
         segments.append({
-            "name": ida_segment.get_segm_name(seg) or "",
+            "name": seg.get_name() or "",
             "start": f"0x{seg.start_ea:x}",
             "end": f"0x{seg.end_ea - 1:x}",
-            "size": seg.size(),
+            "size": seg.end_ea - seg.start_ea,
             "read": bool(perm & ida_segment.SEGPERM_READ),
             "write": bool(perm & ida_segment.SEGPERM_WRITE),
             "execute": bool(perm & ida_segment.SEGPERM_EXEC),

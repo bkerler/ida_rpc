@@ -63,7 +63,7 @@ def _get_kernwin():
     return _ida_kernwin
 
 
-from ida_rpc.session import Session, socket_path_for_project, save, load as load_session
+from ida_rpc.session import Session, socket_path_for_project, remove as remove_session, load as load_session
 from ida_rpc.transport import remove_endpoint_marker
 from ida_rpc.server.main import run_server
 from ida_rpc.server.context import IdaContext
@@ -82,7 +82,6 @@ def _configure_segments_for_arch(arch: str) -> None:
     import ida_typeinf
     import ida_bytes
     import idautils
-    import idc
 
     arch_lower = arch.lower().strip()
 
@@ -150,15 +149,15 @@ def _configure_segments_for_arch(arch: str) -> None:
 
     # Apply to all segments (raw binaries typically have one segment)
     for seg_ea in idautils.Segments():
-        seg = ida_segment.getseg(seg_ea)
-        if seg is None:
+        seg = ida_segment.segment_info_t()
+        if not ida_segment.get_segment_info(seg, seg_ea, ida_segment.GSI_ALL):
             continue
 
         # Set segment class
-        ida_segment.set_segm_class(seg, seg_class)
+        ida_segment.set_segment_class(seg_ea, seg_class)
 
         # Set bitness (address size)
-        ida_segment.set_segm_addressing(seg, bitness)
+        ida_segment.set_segment_addressing(seg_ea, bitness)
 
         if arch_lower in {"aarch64", "arm64", "thumb", "thumb2"}:
             try:
@@ -191,7 +190,8 @@ def _configure_segments_for_arch(arch: str) -> None:
 
         # Set read + execute permissions for code segments
         perm = ida_segment.SEGPERM_READ | ida_segment.SEGPERM_EXEC
-        idc.set_segm_attr(seg_ea, idc.SEGATTR_PERM, perm)
+        seg.set_perm(perm)
+        ida_segment.set_segment_info(seg)
 
     print(f"ida-rpc: configured segments for arch='{arch}' (class={seg_class}, bitness={bitness})")
 
@@ -246,8 +246,6 @@ class IdaRpcPlugin(ida_idaapi.plugin_t):
             socket_path=socket_path,
             arch=arch,
         )
-        save(self.session)
-
         # Auto-configure segments for raw binaries when arch was specified
         if arch:
             _configure_segments_for_arch(arch)
@@ -290,6 +288,10 @@ class IdaRpcPlugin(ida_idaapi.plugin_t):
         if self.session:
             try:
                 remove_endpoint_marker(self.session.socket_path)
+            except Exception:
+                pass
+            try:
+                remove_session(self.session.project_idb)
             except Exception:
                 pass
         if _plugin_instance is self:

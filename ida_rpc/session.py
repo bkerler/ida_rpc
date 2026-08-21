@@ -46,7 +46,7 @@ def session_file_path(idb: Path | str) -> Path:
 
 
 def save(session: Session) -> None:
-    """Persist session to disk."""
+    """Persist session to disk only when its serialized value changed."""
     path = session_file_path(session.project_idb)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {
@@ -56,7 +56,27 @@ def save(session: Session) -> None:
         "ida_install_dir": str(session.ida_install_dir) if session.ida_install_dir else None,
         "arch": session.arch,
     }
-    path.write_text(json.dumps(data, indent=2))
+    content = json.dumps(data, indent=2, sort_keys=True) + "\n"
+    try:
+        if path.read_text() == content:
+            return
+    except FileNotFoundError:
+        pass
+
+    # Replace the state file atomically so status/restart never observes a
+    # partially-written JSON document.
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(tmp_name, path)
+    finally:
+        try:
+            os.unlink(tmp_name)
+        except FileNotFoundError:
+            pass
 
 
 def load(idb: Path | str) -> Session | None:

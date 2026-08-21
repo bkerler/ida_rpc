@@ -242,3 +242,24 @@ class TestSession:
     def test_load_missing(self, tmp_path):
         from ida_rpc.session import load
         assert load(tmp_path / "nonexistent.i64") is None
+
+    def test_save_is_change_only_and_atomic(self, tmp_path):
+        from ida_rpc.session import Session, save, session_file_path
+
+        idb = tmp_path / "test.i64"
+        idb.touch()
+        session = Session(
+            mode="headless",
+            project_idb=idb,
+            socket_path=Path("/tmp/test.sock"),
+            arch="arm",
+        )
+        save(session)
+        path = session_file_path(idb)
+        first = path.read_text()
+        first_mtime = path.stat().st_mtime_ns
+
+        save(session)
+        assert path.read_text() == first
+        assert path.stat().st_mtime_ns == first_mtime
+        assert list(tmp_path.glob(f".{path.name}.*")) == []

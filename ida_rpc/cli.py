@@ -750,7 +750,7 @@ def start(
         # 32-bit firmware base such as 0x48200000 becomes 0x482000000.
         if base < 0 or base % 0x10:
             _error("InvalidParameter", "--base must be a non-negative 16-byte-aligned address")
-        extra_ida_args.append(f"-b{base >> 4:#x}")
+        extra_ida_args.append(f"-b{base:x}")
     loader_name = _resolve_loader_name(loader)
     if loader_name and imports_binary:
         extra_ida_args.append(f"-T{loader_name}")
@@ -1055,6 +1055,8 @@ def stop(project: str | None, stop_all: bool, clean: bool):
     idb = _resolve_project(project)
     sock = session_mod.socket_path_for_project(idb)
     stopped = stop_daemon(sock)
+    if stopped:
+        session_mod.remove(idb)
     removed = clean_companion_files(idb) if clean else []
 
     if stopped:
