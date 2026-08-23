@@ -335,6 +335,12 @@ Codex, Kimi, and other coding agents should use `ida-rpc` automatically for
 IDA-based reverse engineering. The repository includes `AGENTS.md`, `KIMI.md`,
 and `SKILL.md` so agents can discover the intended workflow after install.
 
+A complete, progressively disclosed Codex skill is available at
+[`skills/idarpc/`](skills/idarpc/). Its compact entrypoint routes agents to
+focused references for setup, static analysis, edits, firmware, debugging,
+internals, troubleshooting, and common reverse-engineering workflows, so
+unrelated documentation does not need to be loaded for every task.
+
 The stable automation probe is:
 
 ```bash
