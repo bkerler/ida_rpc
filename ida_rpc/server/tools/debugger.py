@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+import math
+import time
+
 from ida_rpc.server.main import register_handler
 
 
@@ -20,15 +23,153 @@ def _ensure_debugger():
         raise RuntimeError("Debugger is not active. Start or attach to a process first.")
 
 
+def _debugger_state(ida_dbg) -> str:
+    state = ida_dbg.get_process_state()
+    return {
+        int(ida_dbg.DSTATE_SUSP): "suspended",
+        int(ida_dbg.DSTATE_NOTASK): "not_started",
+        int(ida_dbg.DSTATE_RUN): "running",
+    }.get(state, f"unknown({state})")
+
+
+def _wait_for_debugger(
+    ida_dbg,
+    timeout: int,
+    *,
+    require_event: bool = False,
+    allow_exit: bool = False,
+) -> dict:
+    if timeout <= 0:
+        raise ValueError("wait_timeout must be greater than zero")
+
+    deadline = time.monotonic() + timeout
+    events = []
+    max_events = 64
+    while True:
+        debugger_on = bool(ida_dbg.is_debugger_on())
+        state = _debugger_state(ida_dbg)
+        if not require_event and debugger_on and state == "suspended":
+            break
+        if not require_event and allow_exit and state == "not_started":
+            break
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+
+        event = int(
+            ida_dbg.wait_for_next_event(
+                ida_dbg.WFNE_SUSP,
+                max(1, math.ceil(remaining)),
+            )
+        )
+        events.append(event)
+        require_event = False
+        if event <= 0:
+            break
+        if len(events) >= max_events:
+            break
+
+    debugger_on = bool(ida_dbg.is_debugger_on())
+    state = _debugger_state(ida_dbg)
+    process_exited = allow_exit and state == "not_started"
+    if (not debugger_on or state != "suspended") and not process_exited:
+        raise RuntimeError(
+            "IDA accepted the debugger request but the debugger did not become "
+            f"active and suspended within {timeout} seconds "
+            f"(events={events}, debugger_on={debugger_on}, state={state})."
+        )
+    result = {
+        "debugger_on": debugger_on,
+        "state": state,
+        "events": events,
+    }
+    if allow_exit:
+        result["process_exited"] = process_exited
+    return result
+
+
+def _select_debugger_backend(ida_dbg, backend: str, remote: bool) -> dict:
+    backend = backend.strip()
+    if not backend:
+        raise ValueError("Missing required argument: backend")
+    if not ida_dbg.load_debugger(backend, remote):
+        mode = "remote" if remote else "local"
+        raise RuntimeError(
+            f"Failed to load {mode} debugger backend '{backend}'. "
+            "Use the backend's internal IDA name, for example 'win32' on Windows."
+        )
+    return {"backend": backend, "remote": remote, "loaded": True}
+
+
+def _configure_initial_suspension(ida_dbg, suspend_at: str) -> dict:
+    option_by_mode = {
+        "start": ida_dbg.DOPT_START_BPT,
+        "entry": ida_dbg.DOPT_ENTRY_BPT,
+    }
+    if suspend_at not in (*option_by_mode, "none"):
+        raise ValueError("suspend_at must be one of: start, entry, none")
+
+    previous = int(ida_dbg.set_debugger_options(0))
+    suspend_flags = int(ida_dbg.DOPT_START_BPT) | int(ida_dbg.DOPT_ENTRY_BPT)
+    configured = previous & ~suspend_flags
+    if suspend_at != "none":
+        configured |= int(option_by_mode[suspend_at])
+    ida_dbg.set_debugger_options(configured)
+    return {
+        "suspend_at": suspend_at,
+        "debugger_options": configured,
+    }
+
+
+def _handle_debug_select_backend(ctx, args: dict) -> dict:
+    ida_dbg, ida_idaapi, ida_idd, ida_name = _ida_dbg()
+    backend = str(args.get("backend", ""))
+    remote = bool(args.get("remote", False))
+
+    def do_select():
+        return _select_debugger_backend(ida_dbg, backend, remote)
+
+    return ctx.run_on_main_thread(do_select)
+
+
 def _handle_debug_start(ctx, args: dict) -> dict:
     ida_dbg, ida_idaapi, ida_idd, ida_name = _ida_dbg()
     path = args.get("path", "")
     arglist = args.get("args", "")
     sdir = args.get("sdir", "")
+    backend = str(args.get("backend", "")).strip()
+    remote = bool(args.get("remote", False))
+    wait_timeout = int(args.get("wait_timeout", 10))
+    suspend_at = str(args.get("suspend_at", "start")).strip().lower()
+    if remote and not backend:
+        raise ValueError("remote requires a debugger backend")
 
     def do_start():
+        selection = (
+            _select_debugger_backend(ida_dbg, backend, remote)
+            if backend
+            else None
+        )
+        suspension = _configure_initial_suspension(ida_dbg, suspend_at)
         res = ida_dbg.start_process(path or None, arglist or None, sdir or None)
-        return {"started": res, "path": path or None}
+        if res != 1:
+            reason = "cancelled" if res == 0 else "failed"
+            raise RuntimeError(
+                f"Debugger process start {reason} (IDA returned {res}). "
+                "Select a compatible backend before starting."
+            )
+        result = {"started": res, "path": path or None}
+        if selection:
+            result.update(selection)
+        result.update(suspension)
+        result.update(_wait_for_debugger(
+            ida_dbg,
+            wait_timeout,
+            require_event=suspend_at == "none",
+            allow_exit=suspend_at == "none",
+        ))
+        return result
 
     return ctx.run_on_main_thread(do_start)
 
@@ -38,10 +179,30 @@ def _handle_debug_attach(ctx, args: dict) -> dict:
     pid = int(args.get("pid", 0))
     if pid <= 0:
         raise ValueError("Missing or invalid required argument: pid")
+    backend = str(args.get("backend", "")).strip()
+    remote = bool(args.get("remote", False))
+    wait_timeout = int(args.get("wait_timeout", 10))
+    if remote and not backend:
+        raise ValueError("remote requires a debugger backend")
 
     def do_attach():
+        selection = (
+            _select_debugger_backend(ida_dbg, backend, remote)
+            if backend
+            else None
+        )
         res = ida_dbg.attach_process(pid, -1)
-        return {"attached": res, "pid": pid}
+        if res != 1:
+            reason = "cancelled" if res == 0 else "failed"
+            raise RuntimeError(
+                f"Debugger attach {reason} (IDA returned {res}). "
+                "Select a compatible backend before attaching."
+            )
+        result = {"attached": res, "pid": pid}
+        if selection:
+            result.update(selection)
+        result.update(_wait_for_debugger(ida_dbg, wait_timeout))
+        return result
 
     return ctx.run_on_main_thread(do_attach)
 
@@ -69,10 +230,20 @@ def _handle_debug_exit(ctx, args: dict) -> dict:
 def _handle_debug_continue(ctx, args: dict) -> dict:
     ida_dbg, ida_idaapi, ida_idd, ida_name = _ida_dbg()
     _ensure_debugger()
+    wait_timeout = int(args.get("wait_timeout", 10))
 
     def do_continue():
         res = ida_dbg.continue_process()
-        return {"continued": res}
+        if not res:
+            raise RuntimeError("IDA rejected the continue request")
+        result = {"continued": bool(res)}
+        result.update(_wait_for_debugger(
+            ida_dbg,
+            wait_timeout,
+            require_event=True,
+            allow_exit=True,
+        ))
+        return result
 
     return ctx.run_on_main_thread(do_continue)
 
@@ -80,10 +251,19 @@ def _handle_debug_continue(ctx, args: dict) -> dict:
 def _handle_debug_suspend(ctx, args: dict) -> dict:
     ida_dbg, ida_idaapi, ida_idd, ida_name = _ida_dbg()
     _ensure_debugger()
+    wait_timeout = int(args.get("wait_timeout", 10))
 
     def do_suspend():
         res = ida_dbg.suspend_process()
-        return {"suspended": res}
+        if not res:
+            raise RuntimeError("IDA rejected the suspend request")
+        result = {"suspended": bool(res)}
+        result.update(_wait_for_debugger(
+            ida_dbg,
+            wait_timeout,
+            require_event=True,
+        ))
+        return result
 
     return ctx.run_on_main_thread(do_suspend)
 
@@ -91,10 +271,20 @@ def _handle_debug_suspend(ctx, args: dict) -> dict:
 def _handle_debug_step_into(ctx, args: dict) -> dict:
     ida_dbg, ida_idaapi, ida_idd, ida_name = _ida_dbg()
     _ensure_debugger()
+    wait_timeout = int(args.get("wait_timeout", 10))
 
     def do_step():
         res = ida_dbg.step_into()
-        return {"stepped": res}
+        if not res:
+            raise RuntimeError("IDA rejected the step-into request")
+        result = {"stepped": bool(res)}
+        result.update(_wait_for_debugger(
+            ida_dbg,
+            wait_timeout,
+            require_event=True,
+            allow_exit=True,
+        ))
+        return result
 
     return ctx.run_on_main_thread(do_step)
 
@@ -102,10 +292,20 @@ def _handle_debug_step_into(ctx, args: dict) -> dict:
 def _handle_debug_step_over(ctx, args: dict) -> dict:
     ida_dbg, ida_idaapi, ida_idd, ida_name = _ida_dbg()
     _ensure_debugger()
+    wait_timeout = int(args.get("wait_timeout", 10))
 
     def do_step():
         res = ida_dbg.step_over()
-        return {"stepped": res}
+        if not res:
+            raise RuntimeError("IDA rejected the step-over request")
+        result = {"stepped": bool(res)}
+        result.update(_wait_for_debugger(
+            ida_dbg,
+            wait_timeout,
+            require_event=True,
+            allow_exit=True,
+        ))
+        return result
 
     return ctx.run_on_main_thread(do_step)
 
@@ -117,10 +317,20 @@ def _handle_debug_run_to(ctx, args: dict) -> dict:
     if not addr_str:
         raise ValueError("Missing required argument: address")
     addr = ctx.resolve_address(addr_str)
+    wait_timeout = int(args.get("wait_timeout", 10))
 
     def do_run():
         res = ida_dbg.run_to(addr)
-        return {"ran_to": res, "address": f"0x{addr:x}"}
+        if not res:
+            raise RuntimeError(f"IDA rejected the run-to request for 0x{addr:x}")
+        result = {"ran_to": bool(res), "address": f"0x{addr:x}"}
+        result.update(_wait_for_debugger(
+            ida_dbg,
+            wait_timeout,
+            require_event=True,
+            allow_exit=True,
+        ))
+        return result
 
     return ctx.run_on_main_thread(do_run)
 
@@ -128,15 +338,8 @@ def _handle_debug_run_to(ctx, args: dict) -> dict:
 def _handle_debug_status(ctx, args: dict) -> dict:
     ida_dbg, ida_idaapi, ida_idd, ida_name = _ida_dbg()
 
-    state = ida_dbg.get_process_state()
-    state_map = {
-        -1: "not_started",
-        0: "running",
-        1: "suspended",
-    }
-
     return {
-        "state": state_map.get(state, f"unknown({state})"),
+        "state": _debugger_state(ida_dbg),
         "debugger_on": ida_dbg.is_debugger_on(),
         "debugger_busy": ida_dbg.is_debugger_busy(),
     }
@@ -147,18 +350,59 @@ def _handle_debug_get_registers(ctx, args: dict) -> dict:
     _ensure_debugger()
 
     tid = ida_dbg.get_current_thread()
-    regvals = ida_idd.regvals_t()
-    ida_dbg.get_reg_vals(tid, 0, regvals)
+    requested = [str(name).strip() for name in args.get("registers", [])]
+    requested = [name for name in requested if name]
+    if requested:
+        registers = []
+        for name in requested:
+            value = ida_dbg.get_reg_val(name)
+            registers.append({
+                "name": name,
+                "value": _format_register_value(value),
+            })
+        return {
+            "tid": tid,
+            "instruction_pointer": f"0x{int(ida_dbg.get_ip_val()):x}",
+            "stack_pointer": f"0x{int(ida_dbg.get_sp_val()):x}",
+            "registers": registers,
+        }
+
+    try:
+        regvals = ida_dbg.get_reg_vals(tid, -1)
+    except TypeError:
+        # Compatibility with older IDAPython versions that used an output
+        # parameter instead of returning regvals_t directly.
+        regvals = ida_idd.regvals_t()
+        ida_dbg.get_reg_vals(tid, 0, regvals)
 
     registers = []
     for i in range(len(regvals)):
         rv = regvals[i]
         registers.append({
             "index": i,
-            "value": f"0x{rv.ival:x}" if rv.rvtype == ida_idd.RVT_INT else str(rv),
+            "value": _format_register_value(rv, ida_idd),
         })
 
-    return {"tid": tid, "registers": registers}
+    return {
+        "tid": tid,
+        "instruction_pointer": f"0x{int(ida_dbg.get_ip_val()):x}",
+        "stack_pointer": f"0x{int(ida_dbg.get_sp_val()):x}",
+        "registers": registers,
+    }
+
+
+def _format_register_value(value, ida_idd=None) -> str:
+    if isinstance(value, int):
+        return f"0x{value:x}"
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).hex()
+    if ida_idd is not None and value.rvtype == ida_idd.RVT_INT:
+        return f"0x{value.ival:x}"
+    if ida_idd is not None and value.rvtype == ida_idd.RVT_UNAVAILABLE:
+        return "unavailable"
+    return "custom"
 
 
 def _handle_debug_set_register(ctx, args: dict) -> dict:
@@ -308,10 +552,14 @@ def _handle_debug_stack_trace(ctx, args: dict) -> dict:
     frames = []
     for i in range(len(trace)):
         entry = trace[i]
-        fname = ida_name.get_name(entry.ea) or ""
+        call_address = int(getattr(entry, "callea", getattr(entry, "ea", 0)))
+        function_address = int(getattr(entry, "funcea", call_address))
+        fname = ida_name.get_name(function_address) or ""
         frames.append({
             "level": i,
-            "address": f"0x{entry.ea:x}",
+            "address": f"0x{call_address:x}",
+            "function_address": f"0x{function_address:x}",
+            "frame_pointer": f"0x{int(getattr(entry, 'fp', 0)):x}",
             "function": fname,
         })
 
@@ -353,6 +601,7 @@ def _handle_debug_threads(ctx, args: dict) -> dict:
     return {"threads": threads, "count": len(threads)}
 
 
+register_handler("debug_select_backend", _handle_debug_select_backend)
 register_handler("debug_start", _handle_debug_start)
 register_handler("debug_attach", _handle_debug_attach)
 register_handler("debug_detach", _handle_debug_detach)

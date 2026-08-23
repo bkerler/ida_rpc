@@ -72,7 +72,7 @@ _EXPECTED_HANDLERS = {
     "decompile_lvars", "set_lvar_name", "set_lvar_type",
     "decompile_microcode", "decompiler_xrefs",
     # Debugger
-    "debug_start", "debug_attach", "debug_detach", "debug_exit",
+    "debug_select_backend", "debug_start", "debug_attach", "debug_detach", "debug_exit",
     "debug_continue", "debug_suspend", "debug_step_into", "debug_step_over",
     "debug_run_to", "debug_status", "debug_get_registers", "debug_set_register",
     "debug_read_memory", "debug_write_memory", "debug_breakpoints",
