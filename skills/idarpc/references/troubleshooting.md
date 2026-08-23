@@ -32,6 +32,9 @@ Adapted from upstream [troubleshooting](https://github.com/bkerler/ida_rpc/blob/
 | Keystone unavailable | Do not install automatically; report that `assemble` needs the optional dependency |
 | Function not found | Refresh names, use exact case, then exact address |
 | Ambiguous function | Use the address returned in the candidates |
+| `NoSuchCommand` | Re-read the complete `capabilities` output, then run the intended command's `--help`; do not guess a plural, width-specific, or shortened alias |
+| JSON field `KeyError` | Inspect the complete raw envelope, require `ok: true`, and use the exact key returned under `result` rather than a remembered or inferred name |
+| JSON decode failure | Keep stderr separate from stdout and remove `2>&1` from the JSON-producing pipeline before retrying |
 | Main-thread error | Treat as an ida-rpc handler bug; do not repeat the same call indefinitely |
 | SWIG `TypeError` mentioning `void *` | Treat as an IDAPython wrapper compatibility defect; preserve the exact signature error and do not retry equivalent buffer forms |
 | Heavy operation timeout | Narrow the target or raise the command timeout once with a justified bound |

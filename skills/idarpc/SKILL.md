@@ -13,6 +13,8 @@ Use `ida-rpc` as a structured local interface to one IDA database per daemon. Pr
 - Resolve the target binary or IDB to an absolute path before starting a daemon.
 - Use `--json` before the subcommand when output will be parsed or compared by an agent.
 - Start with `capabilities`, `find-project`, and, for ambiguous or raw inputs, `list-loaders`.
+- Treat the complete `capabilities` and `<command> --help` output as interface contracts. Do not truncate them before confirming a command and its arguments, and never invent a command, flag, or JSON key by analogy.
+- Keep JSON stdout separate from diagnostic stderr. Do not pipe `2>&1` into a JSON parser. Inspect one raw response before extracting fields, check `ok`, and preserve `error` plus `message` on failure.
 - Reuse one responsive daemon for a project. IDA opens one IDB per process; never start two daemons against the same IDB.
 - Treat inspection, explanation, triage, comparison, and audit requests as read-only. Rename, retype, comment, patch, create, delete, debug, or save only when the requested outcome authorizes it.
 - Before a mutation, read the exact target. After it, re-read the result and save once per logical batch when persistence is required.
