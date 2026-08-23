@@ -33,6 +33,7 @@ Adapted from upstream [troubleshooting](https://github.com/bkerler/ida_rpc/blob/
 | Function not found | Refresh names, use exact case, then exact address |
 | Ambiguous function | Use the address returned in the candidates |
 | Main-thread error | Treat as an ida-rpc handler bug; do not repeat the same call indefinitely |
+| SWIG `TypeError` mentioning `void *` | Treat as an IDAPython wrapper compatibility defect; preserve the exact signature error and do not retry equivalent buffer forms |
 | Heavy operation timeout | Narrow the target or raise the command timeout once with a justified bound |
 | Batch JSON error | Validate UTF-8 JSON shape and command names before retrying |
 

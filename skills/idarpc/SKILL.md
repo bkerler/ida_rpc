@@ -59,4 +59,6 @@ Read only the first reference that matches the current task. Load another only w
 - Preserve exact addresses, names, bytes, command errors, and tool version.
 - Separate observed facts from inference.
 - State whether the target binary or IDB was changed and whether changes were saved.
+- Distinguish IDB creation and automatic analysis from analyst-authored changes such as renames, types, comments, or patches.
+- When the user requests a process log, include the normalized command sequence, selected raw JSON evidence and errors, and the final debugger and daemon state.
 - Never claim runtime debugging, GUI focus, or a successful mutation without reading back evidence.

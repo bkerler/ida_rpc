@@ -21,7 +21,7 @@ The upstream README lists debugger commands, while the installed CLI remains the
 1. Confirm the executable path, arguments, working directory, backend, and whether launching or attaching is authorized.
 2. Select the backend separately with `debug-select-backend`, or atomically with `debug-start --backend <name>` or `debug-attach --backend <name>`.
 3. Start or attach and require a successful response with `debugger_on: true` and `state: suspended`. The start command defaults to a process-start breakpoint; use `--suspend-at entry` when the program entry is the intended first stop.
-4. Resolve the current runtime address after startup, then add a breakpoint at an exact address. Do not reuse a preferred image-base address after ASLR rebasing without checking it.
+4. Resolve the current runtime address after startup, then add a breakpoint at an exact address. Record the module base, RVA, and runtime address as separate values (`runtime address = module base + RVA`); do not label a function address as the module base or reuse a preferred image-base address after ASLR rebasing without checking it.
 5. Continue, step, or run-to. These commands wait for suspension or process exit by default; use a bounded `--wait-timeout` appropriate to the target.
 6. At a stop, read named registers with repeated `--register` options and corroborate the instruction pointer with the stack trace and expected function address.
 7. Remove temporary breakpoints and detach or exit as requested.
@@ -38,3 +38,5 @@ Older installed builds may lack `debug-select-backend` and the `--backend` optio
 ## Runtime writes
 
 `debug-set-register` and `debug-write-memory` change live process state. Read the current value first, make the smallest requested change, read it back, and report the effect. These commands do not replace IDB patch commands.
+
+`debug-read-memory` reads the live process, while `read-bytes` reads the IDB. Do not substitute one for the other when runtime state matters. A SWIG `TypeError` mentioning `read_dbg_memory` and `void *` identifies an older handler that passed a Python buffer to IDA's low-level API; record it as a tool compatibility defect rather than retrying address variants. Upgrade or patch the tool only when maintenance is authorized.

@@ -433,9 +433,12 @@ def _handle_debug_read_memory(ctx, args: dict) -> dict:
         raise ValueError("length must be between 1 and 65536")
 
     addr = ctx.resolve_address(addr_str)
-    buf = bytearray(length)
-    nread = ida_dbg.read_dbg_memory(addr, buf, length)
-    data = bytes(buf[:nread]) if nread > 0 else b""
+    data = ida_idd.dbg_read_memory(addr, length)
+    if data is None:
+        raise RuntimeError(
+            f"Failed to read {length} bytes of debugger memory at 0x{addr:x}"
+        )
+    data = bytes(data)
 
     return {
         "address": f"0x{addr:x}",

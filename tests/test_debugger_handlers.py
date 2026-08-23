@@ -18,6 +18,9 @@ class _ImmediateContext:
         self.dispatched = True
         return callback()
 
+    def resolve_address(self, value):
+        return int(value, 0)
+
 
 class _FakeDebugger:
     def __init__(self, *, load_result=True, start_result=1, attach_result=1):
@@ -313,3 +316,49 @@ def test_stack_trace_supports_ida_94_fields(monkeypatch):
         "frame_pointer": "0x12ff00",
         "function": "mix_score",
     }]
+
+
+def test_read_memory_uses_bytes_returning_ida_wrapper(monkeypatch):
+    fake = _FakeDebugger()
+    fake.debugger_on = True
+    calls = []
+
+    def dbg_read_memory(address, length):
+        calls.append((address, length))
+        return b"hello idarpc"
+
+    ida_idd = SimpleNamespace(dbg_read_memory=dbg_read_memory)
+    monkeypatch.setattr(
+        debugger,
+        "_ida_dbg",
+        lambda: (fake, SimpleNamespace(), ida_idd, SimpleNamespace()),
+    )
+
+    result = debugger._handle_debug_read_memory(
+        _ImmediateContext(),
+        {"address": "0x140003090", "length": 12},
+    )
+
+    assert calls == [(0x140003090, 12)]
+    assert result == {
+        "address": "0x140003090",
+        "length": 12,
+        "hex": "68656c6c6f20696461727063",
+    }
+
+
+def test_read_memory_reports_debugger_read_failure(monkeypatch):
+    fake = _FakeDebugger()
+    fake.debugger_on = True
+    ida_idd = SimpleNamespace(dbg_read_memory=lambda address, length: None)
+    monkeypatch.setattr(
+        debugger,
+        "_ida_dbg",
+        lambda: (fake, SimpleNamespace(), ida_idd, SimpleNamespace()),
+    )
+
+    with pytest.raises(RuntimeError, match="Failed to read 12 bytes"):
+        debugger._handle_debug_read_memory(
+            _ImmediateContext(),
+            {"address": "0x140003090", "length": 12},
+        )
