@@ -330,7 +330,7 @@ def _handle_set_data_type(ctx, args: dict) -> dict:
 
 
 def _handle_create_function(ctx, args: dict) -> dict:
-    ida_name, _, ida_funcs, _, _, _, _ = _ida()
+    ida_name, _, ida_funcs, _, ida_idaapi, _, _ = _ida()
 
     _ = args.get("binary", "")
     address_str = args.get("address", "")
@@ -384,7 +384,7 @@ def _handle_create_function(ctx, args: dict) -> dict:
 
 
 def _handle_delete_function(ctx, args: dict) -> dict:
-    _, _, ida_funcs, _, _, _, _ = _ida()
+    _, _, ida_funcs, _, ida_idaapi, _, _ = _ida()
 
     _ = args.get("binary", "")
     target = args.get("target", "")
@@ -414,7 +414,7 @@ def _handle_delete_function(ctx, args: dict) -> dict:
 
 
 def _handle_set_thunk(ctx, args: dict) -> dict:
-    _, _, ida_funcs, _, _, _, idc = _ida()
+    _, _, ida_funcs, _, ida_idaapi, _, idc = _ida()
 
     _ = args.get("binary", "")
     target = args.get("target", "")
