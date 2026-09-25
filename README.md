@@ -289,16 +289,31 @@ Lumina commands use the primary or secondary Lumina server configured in IDA
 
 | Command | Description |
 |---------|-------------|
-| `debug-start [--path P] [--args A] [--sdir D]` | Start a debug session |
-| `debug-attach <pid>` | Attach debugger to a process |
+| `debug-select-backend <backend> [--remote]` | Select an IDA debugger backend by internal name |
+| `debug-start [path] [--args A] [--sdir D] [--backend B] [--remote] [--suspend-at start\|entry\|none] [--wait-timeout N]` | Optionally select a backend, then start and wait for initial suspension |
+| `debug-attach <pid> [--backend B] [--remote] [--wait-timeout N]` | Optionally select a backend, then attach and wait for initial suspension |
 | `debug-detach`, `debug-exit` | Detach or exit debugger |
-| `debug-continue`, `debug-suspend` | Continue or suspend execution |
-| `debug-step-into`, `debug-step-over`, `debug-run-to <address>` | Step or run to an address |
+| `debug-continue [--wait-timeout N]`, `debug-suspend [--wait-timeout N]` | Continue or suspend execution and wait for the resulting state |
+| `debug-step-into [--wait-timeout N]`, `debug-step-over [--wait-timeout N]`, `debug-run-to <address> [--wait-timeout N]` | Step or run to an address, waiting for suspension or exit |
 | `debug-status` | Show debugger status |
 | `debug-get-registers`, `debug-set-register <reg> <value>` | Read or write registers |
 | `debug-read-memory <address> <length>`, `debug-write-memory <address> <hex>` | Read or write debug memory |
 | `debug-breakpoints`, `debug-add-breakpoint <address>`, `debug-delete-breakpoint <address>`, `debug-enable-breakpoint <address> --enabled/--disabled` | Manage breakpoints |
 | `debug-stack-trace`, `debug-modules`, `debug-threads` | Inspect runtime state |
+
+Use repeated `--register` options to request named registers without returning
+the full architecture-specific register set, for example
+`ida-rpc debug-get-registers --register RIP --register RCX`.
+
+Backend names are IDA plugin identifiers rather than display labels. For
+example, use `win32` for the local Windows debugger, `linux` for the local
+Linux debugger, and `mac` for the local macOS debugger. The backend can be
+selected separately or atomically with process startup:
+
+```bash
+ida-rpc debug-select-backend win32 --project /path/to/program.i64
+ida-rpc debug-start /path/to/program.exe --backend win32 --project /path/to/program.i64
+```
 
 ### Navigation (GUI only)
 
@@ -319,6 +334,12 @@ Lumina commands use the primary or secondary Lumina server configured in IDA
 Codex, Kimi, and other coding agents should use `ida-rpc` automatically for
 IDA-based reverse engineering. The repository includes `AGENTS.md`, `KIMI.md`,
 and `SKILL.md` so agents can discover the intended workflow after install.
+
+A complete, progressively disclosed Codex skill is available at
+[`skills/idarpc/`](skills/idarpc/). Its compact entrypoint routes agents to
+focused references for setup, static analysis, edits, firmware, debugging,
+internals, troubleshooting, and common reverse-engineering workflows, so
+unrelated documentation does not need to be loaded for every task.
 
 The stable automation probe is:
 
