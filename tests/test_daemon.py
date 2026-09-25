@@ -13,6 +13,10 @@ from ida_rpc.session import Session, load, session_file_path
 
 
 def test_binary_launch_lets_ida_choose_loader_by_default(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "ida_rpc.daemon._startup_log_paths",
+        lambda _: (tmp_path / "launch.log", tmp_path / "ida.log"),
+    )
     ida_dir = tmp_path / "ida"
     ida_dir.mkdir()
     idat_exe = ida_dir / ("idat.exe" if os.name == "nt" else "idat")
@@ -61,6 +65,10 @@ def test_binary_launch_lets_ida_choose_loader_by_default(tmp_path, monkeypatch):
 
 
 def test_explicit_loader_is_passed_to_ida(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "ida_rpc.daemon._startup_log_paths",
+        lambda _: (tmp_path / "launch.log", tmp_path / "ida.log"),
+    )
     ida_dir = tmp_path / "ida"
     ida_dir.mkdir()
     idat_exe = ida_dir / ("idat.exe" if os.name == "nt" else "idat")
@@ -157,6 +165,10 @@ def test_timeout_reports_live_process_and_keeps_session(tmp_path, monkeypatch):
 
 
 def test_launch_uses_original_path_spelling(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "ida_rpc.daemon._startup_log_paths",
+        lambda _: (tmp_path / "launch.log", tmp_path / "ida.log"),
+    )
     ida_dir = tmp_path / "ida"
     ida_dir.mkdir()
     (ida_dir / ("idat.exe" if os.name == "nt" else "idat")).touch()
