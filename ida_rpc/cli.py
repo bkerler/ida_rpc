@@ -1834,6 +1834,20 @@ def set_thunk(target: str, thunk_target: str, clear: bool, project: str | None):
     _rpc_command(_resolve_project(project), "set_thunk", args)
 
 
+@cli.command(name="set-function-flags")
+@click.argument("target")
+@click.option("--clear-noreturn", is_flag=True, default=False)
+@click.option("--set-noreturn", is_flag=True, default=False)
+@click.option("--project", "project", type=str, help="Path to IDB file")
+def set_function_flags(target: str, clear_noreturn: bool, set_noreturn: bool, project: str | None):
+    """Set or clear selected IDA function flags."""
+    _rpc_command(_resolve_project(project), "set_function_flags", {
+        "target": target,
+        "clear_noreturn": clear_noreturn,
+        "set_noreturn": set_noreturn,
+    })
+
+
 @cli.command(name="set-calling-convention")
 @click.argument("target")
 @click.argument("convention")
