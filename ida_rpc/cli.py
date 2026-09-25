@@ -132,6 +132,16 @@ CORE_CAPABILITIES = {
             "set-equate",
             "list-equates",
         ],
+        "debugger": [
+            "debug-select-backend",
+            "debug-start",
+            "debug-attach",
+            "debug-status",
+            "debug-breakpoints",
+            "debug-get-registers",
+            "debug-read-memory",
+            "debug-stack-trace",
+        ],
     },
 }
 
@@ -2230,12 +2240,57 @@ def delete_segment(start: str, project: str | None):
 # Processor Context
 # ---------------------------------------------------------------------------
 
+@cli.command(name="debug-select-backend")
+@click.argument("backend")
+@click.option(
+    "--remote/--local",
+    default=False,
+    help="Select a remote or local debugger backend.",
+)
+@click.option("--project", "-p", type=str, help="Path to IDB file")
+def debug_select_backend(backend: str, remote: bool, project: str | None):
+    """Select an IDA debugger backend by its internal name."""
+    _rpc_command(_resolve_project(project), "debug_select_backend", {
+        "backend": backend,
+        "remote": remote,
+    })
+
+
 @cli.command(name="debug-start")
 @click.argument("path", required=False, default="")
 @click.option("--args", default="")
 @click.option("--sdir", default="")
+@click.option("--backend", type=str, help="IDA debugger backend name, for example win32.")
+@click.option(
+    "--remote/--local",
+    default=False,
+    help="Load the selected backend in remote or local mode.",
+)
+@click.option(
+    "--wait-timeout",
+    type=click.IntRange(min=1),
+    default=10,
+    show_default=True,
+    help="Seconds to wait for the initial debugger suspension.",
+)
+@click.option(
+    "--suspend-at",
+    type=click.Choice(["start", "entry", "none"]),
+    default="start",
+    show_default=True,
+    help="Where to request the initial debugger suspension.",
+)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
-def debug_start(path: str, args: str, sdir: str, project: str | None):
+def debug_start(
+    path: str,
+    args: str,
+    sdir: str,
+    backend: str | None,
+    remote: bool,
+    wait_timeout: int,
+    suspend_at: str,
+    project: str | None,
+):
     """Start debugging a program."""
     rpc_args: dict = {}
     if path:
@@ -2244,15 +2299,48 @@ def debug_start(path: str, args: str, sdir: str, project: str | None):
         rpc_args["args"] = args
     if sdir:
         rpc_args["sdir"] = sdir
+    if backend:
+        rpc_args["backend"] = backend
+        rpc_args["remote"] = remote
+    elif remote:
+        raise click.UsageError("--remote requires --backend")
+    rpc_args["wait_timeout"] = wait_timeout
+    rpc_args["suspend_at"] = suspend_at
     _rpc_command(_resolve_project(project), "debug_start", rpc_args)
 
 
 @cli.command(name="debug-attach")
 @click.argument("pid", type=int)
+@click.option("--backend", type=str, help="IDA debugger backend name, for example win32.")
+@click.option(
+    "--remote/--local",
+    default=False,
+    help="Load the selected backend in remote or local mode.",
+)
+@click.option(
+    "--wait-timeout",
+    type=click.IntRange(min=1),
+    default=10,
+    show_default=True,
+    help="Seconds to wait for the initial debugger suspension.",
+)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
-def debug_attach(pid: int, project: str | None):
+def debug_attach(
+    pid: int,
+    backend: str | None,
+    remote: bool,
+    wait_timeout: int,
+    project: str | None,
+):
     """Attach the debugger to a process."""
-    _rpc_command(_resolve_project(project), "debug_attach", {"pid": pid})
+    rpc_args: dict = {"pid": pid}
+    if backend:
+        rpc_args["backend"] = backend
+        rpc_args["remote"] = remote
+    elif remote:
+        raise click.UsageError("--remote requires --backend")
+    rpc_args["wait_timeout"] = wait_timeout
+    _rpc_command(_resolve_project(project), "debug_attach", rpc_args)
 
 
 @cli.command(name="debug-detach")
@@ -2270,39 +2358,93 @@ def debug_exit(project: str | None):
 
 
 @cli.command(name="debug-continue")
+@click.option(
+    "--wait-timeout",
+    type=click.IntRange(min=1),
+    default=10,
+    show_default=True,
+    help="Seconds to wait for the next suspension or process exit.",
+)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
-def debug_continue(project: str | None):
+def debug_continue(wait_timeout: int, project: str | None):
     """Continue execution in the debugger."""
-    _rpc_command(_resolve_project(project), "debug_continue", {})
+    _rpc_command(
+        _resolve_project(project),
+        "debug_continue",
+        {"wait_timeout": wait_timeout},
+    )
 
 
 @cli.command(name="debug-suspend")
+@click.option(
+    "--wait-timeout",
+    type=click.IntRange(min=1),
+    default=10,
+    show_default=True,
+    help="Seconds to wait for the process to suspend.",
+)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
-def debug_suspend(project: str | None):
+def debug_suspend(wait_timeout: int, project: str | None):
     """Suspend execution."""
-    _rpc_command(_resolve_project(project), "debug_suspend", {})
+    _rpc_command(
+        _resolve_project(project),
+        "debug_suspend",
+        {"wait_timeout": wait_timeout},
+    )
 
 
 @cli.command(name="debug-step-into")
+@click.option(
+    "--wait-timeout",
+    type=click.IntRange(min=1),
+    default=10,
+    show_default=True,
+    help="Seconds to wait for the next suspension or process exit.",
+)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
-def debug_step_into(project: str | None):
+def debug_step_into(wait_timeout: int, project: str | None):
     """Single step into."""
-    _rpc_command(_resolve_project(project), "debug_step_into", {})
+    _rpc_command(
+        _resolve_project(project),
+        "debug_step_into",
+        {"wait_timeout": wait_timeout},
+    )
 
 
 @cli.command(name="debug-step-over")
+@click.option(
+    "--wait-timeout",
+    type=click.IntRange(min=1),
+    default=10,
+    show_default=True,
+    help="Seconds to wait for the next suspension or process exit.",
+)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
-def debug_step_over(project: str | None):
+def debug_step_over(wait_timeout: int, project: str | None):
     """Step over a call."""
-    _rpc_command(_resolve_project(project), "debug_step_over", {})
+    _rpc_command(
+        _resolve_project(project),
+        "debug_step_over",
+        {"wait_timeout": wait_timeout},
+    )
 
 
 @cli.command(name="debug-run-to")
 @click.argument("address")
+@click.option(
+    "--wait-timeout",
+    type=click.IntRange(min=1),
+    default=10,
+    show_default=True,
+    help="Seconds to wait for the next suspension or process exit.",
+)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
-def debug_run_to(address: str, project: str | None):
+def debug_run_to(address: str, wait_timeout: int, project: str | None):
     """Run execution to an address."""
-    _rpc_command(_resolve_project(project), "debug_run_to", {"address": address})
+    _rpc_command(_resolve_project(project), "debug_run_to", {
+        "address": address,
+        "wait_timeout": wait_timeout,
+    })
 
 
 @cli.command(name="debug-status")
@@ -2313,10 +2455,17 @@ def debug_status(project: str | None):
 
 
 @cli.command(name="debug-get-registers")
+@click.option(
+    "--register",
+    "registers",
+    multiple=True,
+    help="Read a named register; repeat to select multiple registers.",
+)
 @click.option("--project", "-p", type=str, help="Path to IDB file")
-def debug_get_registers(project: str | None):
+def debug_get_registers(registers: tuple[str, ...], project: str | None):
     """Get debugger register values."""
-    _rpc_command(_resolve_project(project), "debug_get_registers", {})
+    rpc_args = {"registers": list(registers)} if registers else {}
+    _rpc_command(_resolve_project(project), "debug_get_registers", rpc_args)
 
 
 @cli.command(name="debug-set-register")

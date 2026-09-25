@@ -8,32 +8,32 @@ The upstream README lists debugger commands, while the installed CLI remains the
 
 | Need | Commands |
 |---|---|
+| Backend | `debug-select-backend`; `debug-start`/`debug-attach` with `--backend` and `--remote`/`--local` |
 | Lifecycle | `debug-start`, `debug-attach`, `debug-detach`, `debug-exit` |
 | Execution | `debug-continue`, `debug-suspend`, `debug-step-into`, `debug-step-over`, `debug-run-to` |
 | State | `debug-status`, `debug-threads`, `debug-modules`, `debug-stack-trace` |
-| Registers | `debug-get-registers`, `debug-set-register` |
+| Registers | `debug-get-registers [--register NAME]`, `debug-set-register` |
 | Runtime memory | `debug-read-memory`, `debug-write-memory` |
 | Breakpoints | `debug-breakpoints`, `debug-add-breakpoint`, `debug-delete-breakpoint`, `debug-enable-breakpoint` |
 
 ## Safe workflow
 
-1. Confirm the executable path, arguments, working directory, and whether launching or attaching is authorized.
-2. Start or attach, then poll `debug-status` until `debugger_on` is true and the state is suitable for the next action.
-3. Add a breakpoint at an exact module-relative or rebased runtime address.
-4. Continue or run-to; verify suspension before reading registers, memory, or stack.
-5. After each step command, poll status again. Debugger APIs can be asynchronous.
-6. Remove temporary breakpoints and detach or exit as requested.
-7. Stop the ida-rpc daemon if this task started it.
+1. Confirm the executable path, arguments, working directory, backend, and whether launching or attaching is authorized.
+2. Select the backend separately with `debug-select-backend`, or atomically with `debug-start --backend <name>` or `debug-attach --backend <name>`.
+3. Start or attach and require a successful response with `debugger_on: true` and `state: suspended`. The start command defaults to a process-start breakpoint; use `--suspend-at entry` when the program entry is the intended first stop.
+4. Resolve the current runtime address after startup, then add a breakpoint at an exact address. Record the module base, RVA, and runtime address as separate values (`runtime address = module base + RVA`); do not label a function address as the module base or reuse a preferred image-base address after ASLR rebasing without checking it.
+5. Continue, step, or run-to. These commands wait for suspension or process exit by default; use a bounded `--wait-timeout` appropriate to the target.
+6. At a stop, read named registers with repeated `--register` options and corroborate the instruction pointer with the stack trace and expected function address.
+7. Remove temporary breakpoints and detach or exit as requested.
+8. Stop the ida-rpc daemon if this task started it.
 
-## Known activation gap
+## Backend selection
 
-Some ida-rpc builds expose `debug-start` but not a command that calls IDA's `ida_dbg.load_debugger()` to select the local backend. In that state:
+Backend values are IDA debugger plugin identifiers, not display labels. For example, the local Windows debugger uses `win32`. Pass `--remote` only together with an explicit backend.
 
-- `debug-start` can return `started: -1`;
-- `debug-status` can show `debugger_on: false` even if `state` appears to be `running`;
-- breakpoints, registers, modules, and stack commands fail with `Debugger is not active`.
+For a headless workflow, start the ida-rpc daemon with `open --detach`; manually opening the program in the IDA GUI is not required. Backend selection and process startup still occur inside the IDA process through RPC.
 
-Treat `debugger_on` as authoritative. Do not claim CLI-driven debugging works end to end until a process is actually active. Do not use GUI automation unless the user asks for it. If the installed build lacks backend activation, report the missing capability rather than patching the tool or using another interface without permission.
+Older installed builds may lack `debug-select-backend` and the `--backend` options. Probe the live CLI before debugging. Treat `debugger_on` as authoritative, and do not claim end-to-end debugging until a real process has stopped at an expected address. Do not use GUI automation unless the user asks for it.
 
 ## Runtime writes
 

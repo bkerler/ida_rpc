@@ -22,6 +22,21 @@ The command sequence is derived from the upstream [quick start](https://github.c
 - For one function, prefer `function-info` before combining many separate probes.
 - Use `decompile-all` only for an explicit bulk-export or diff workflow and provide a filter or limit when practical.
 
+## Machine-readable output
+
+- JSON mode returns an envelope with `ok` and either `result` or the failure fields `error` and `message`. Inspect one complete raw response before scripting nested field extraction.
+- Keep stderr separate from stdout while parsing JSON; redirecting `2>&1` into a JSON parser can corrupt an otherwise valid response.
+- `decompile <function-or-address>` returns pseudo-C in `result.c_code`, not `result.decompiled`.
+- Static bytes use positional arguments: `read-bytes <address> <length>`. The result includes `result.hex` and `result.hexdump`.
+- There is no `read-qwords` command. Read the required byte count with `read-bytes`, then decode `result.hex` in the target's endianness; for six 64-bit little-endian entries, read 48 bytes.
+
+Before parsing, first verify the raw forms:
+
+```text
+ida-rpc --json decompile 0x140001000 --project <idb>
+ida-rpc --json read-bytes 0x140003000 48 --project <idb>
+```
+
 ## Evidence rules
 
 - Decompiled code is an interpretation. Cross-check security-sensitive conclusions with disassembly, xrefs, types, or microcode.
@@ -42,4 +57,4 @@ The command sequence is derived from the upstream [quick start](https://github.c
 | What do the bytes contain? | `read-bytes`, `read-string`, `find-bytes`, `file-offset` |
 | What did Hex-Rays infer? | `decompile-lvars`, `decompile-microcode` |
 
-Use `<command> --help` before relying on an uncommon flag.
+Use the complete `<command> --help` output before relying on an uncommon flag.
