@@ -689,16 +689,17 @@ def start(
 
     binary_path = None
     if binary:
-        binary_path = Path(binary).resolve()
+        binary_path = Path(binary).absolute()
         if not binary_path.exists():
             _error("FileNotFound", f"Binary not found: {binary}")
 
     if project:
-        idb_path = Path(project).resolve()
+        launch_idb_path = Path(project).absolute()
     elif binary_path:
-        idb_path = binary_path.with_suffix(".i64")
+        launch_idb_path = binary_path.with_suffix(".i64")
     else:
         _error("MissingArgument", "Provide either BINARY or --project")
+    idb_path = launch_idb_path.resolve()
 
     # If no binary provided, the IDB must already exist
     if not binary_path and not idb_path.exists():
@@ -746,6 +747,7 @@ def start(
         socket_path=sock,
         ida_install_dir=ida_dir_path,
         arch=arch,
+        launch_project_idb=launch_idb_path,
     )
 
     # Pass arch/base through to the background launcher
@@ -922,6 +924,7 @@ def restart(
             socket_path=session.socket_path,
             ida_install_dir=session.ida_install_dir,
             arch=session.arch,
+            launch_project_idb=session.launch_project_idb,
         )
     else:
         # Default to headless when no saved mode or saved mode was headless.
@@ -931,6 +934,7 @@ def restart(
             socket_path=session.socket_path,
             ida_install_dir=session.ida_install_dir,
             arch=session.arch,
+            launch_project_idb=session.launch_project_idb,
         )
 
     if ida_install_dir:

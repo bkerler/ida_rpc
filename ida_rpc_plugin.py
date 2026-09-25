@@ -64,7 +64,6 @@ def _get_kernwin():
 
 
 from ida_rpc.session import Session, socket_path_for_project, remove as remove_session, load as load_session
-from ida_rpc.transport import remove_endpoint_marker
 from ida_rpc.server.main import run_server
 from ida_rpc.server.context import IdaContext
 
@@ -260,8 +259,9 @@ class IdaRpcPlugin(ida_idaapi.plugin_t):
             # so all IDA API calls naturally run on the main thread.
             try:
                 run_server(self.session, ctx, synchronous=True)
-            except Exception as e:
-                print(f"ida-rpc server error: {e}")
+            except Exception:
+                import traceback
+                print(traceback.format_exc())
             finally:
                 ctx.close()
         else:
@@ -269,8 +269,9 @@ class IdaRpcPlugin(ida_idaapi.plugin_t):
             def _start_server():
                 try:
                     run_server(self.session, ctx)
-                except Exception as e:
-                    print(f"ida-rpc server error: {e}")
+                except Exception:
+                    import traceback
+                    print(traceback.format_exc())
                 finally:
                     ctx.close()
 
@@ -286,10 +287,6 @@ class IdaRpcPlugin(ida_idaapi.plugin_t):
     def term(self):
         global _plugin_instance
         if self.session:
-            try:
-                remove_endpoint_marker(self.session.socket_path)
-            except Exception:
-                pass
             try:
                 remove_session(self.session.project_idb)
             except Exception:

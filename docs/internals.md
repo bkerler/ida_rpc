@@ -13,7 +13,8 @@ recreate the daemon without the user having to pass `--mode` / `--headless` agai
 2. `<idb-parent>/.ida-rpc-<hash>.json` — alongside the IDB file (default)
 3. Backward compat: `~/.local/share/ida-rpc/<hash>.json` — checked by `load()` only
 
-**Fields stored**: `mode`, `project_idb`, `socket_path`, `ida_install_dir`
+**Fields stored**: `mode`, `project_idb`, `socket_path`, `ida_install_dir`,
+`arch`, and `launch_project_idb` (the caller's path spelling passed to IDA)
 (`ida_install_dir` is `null` when not explicitly provided).
 
 **`IDA_INSTALL_DIR` propagation**: `start_background()` builds the subprocess env
@@ -28,14 +29,19 @@ cron/systemd/nohup contexts that strip non-standard env vars.
 2. Spawns `idat -A <idb>` (headless) or `ida <idb>` (GUI) with `start_new_session=True`
    so the child survives the parent's exit. New raw imports pass `-o<idb>` and
    any requested loader/processor arguments before the input binary.
-3. Polls the socket (0.5 s interval) until it's responsive or the timeout expires.
-4. On timeout the error message includes the log file path.
+3. Polls the endpoint (0.5 s interval) until it responds, IDA exits, or the
+   timeout expires. An early exit reports its exit code immediately.
+4. Startup errors include the IDA log path, launch log path, and recent output.
 
-Log file: the platform temporary directory as `ida-rpc-<hash>.log` (same stem
-as the endpoint marker). On timeout:
-```bash
-tail -50 /tmp/ida-rpc-*.log
-```
+Each launch writes separate `*.ida.log` and `*.launch.log` files under
+`ida_rpc/logs` (or a temporary `ida-rpc/logs` directory if the package directory
+is read-only). The IDA process receives `-L` so its own output is captured.
+If IDA is still running when the startup timeout expires, it is left alone to
+finish a potentially long import; retry `status` before starting another copy.
+
+On Windows the server binds loopback TCP port 0 and atomically publishes the
+selected port in the endpoint marker. Clients can still read legacy empty
+markers from older daemons that used a path-derived port.
 
 ## Loader Discovery and Selection
 

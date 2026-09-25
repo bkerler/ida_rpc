@@ -6,15 +6,49 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
 from ida_rpc.session import Session
-from ida_rpc.transport import endpoint_address
+from ida_rpc.transport import endpoint_address, endpoint_marker
 
 
 # IDA database companion file extensions that can become stale after a crash
 _IDA_COMPANION_EXTS = (".id0", ".id1", ".id2", ".nam", ".til")
+
+
+class DaemonExitedError(RuntimeError):
+    """IDA exited before its RPC server became responsive."""
+
+
+def _startup_log_paths(socket_path: Path) -> tuple[Path, Path]:
+    """Keep each launch's Python and IDA logs together when possible."""
+    log_dir = Path(__file__).resolve().parent / "logs"
+    try:
+        log_dir.mkdir(exist_ok=True)
+    except OSError:
+        log_dir = Path(tempfile.gettempdir()) / "ida-rpc" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+    name = f"{socket_path.stem}-{time.time_ns()}"
+    return log_dir / f"{name}.launch.log", log_dir / f"{name}.ida.log"
+
+
+def _log_tail(path: Path) -> str:
+    """Include a bounded log excerpt in startup failures."""
+    try:
+        with path.open("rb") as stream:
+            stream.seek(0, os.SEEK_END)
+            stream.seek(max(0, stream.tell() - 8192))
+            data = stream.read()
+    except OSError:
+        return ""
+    for encoding in ("utf-8", "mbcs" if os.name == "nt" else "utf-8"):
+        try:
+            return "\n".join(data.decode(encoding).splitlines()[-12:])
+        except UnicodeDecodeError:
+            continue
+    return "\n".join(data.decode("utf-8", errors="replace").splitlines()[-12:])
 
 
 def _companion_files(idb_path: Path) -> list[Path]:
@@ -70,7 +104,10 @@ def is_running(socket_path: Path) -> bool:
                 data += chunk
             if data.strip():
                 resp = json.loads(data.decode().strip())
-                return resp.get("ok", False)
+                if resp.get("ok") is not True or resp.get("result", {}).get("status") != "alive":
+                    return False
+                marker = endpoint_marker(socket_path)
+                return not marker or not marker.get("project") or resp["result"].get("project") == marker["project"]
             return False
         finally:
             s.close()
@@ -116,10 +153,7 @@ def start_background(
     """
     from ida_rpc import session as session_mod
 
-    session_mod.save(session)
-
-    socket_stem = session.socket_path.stem
-    log_path = session.socket_path.parent / f"{socket_stem}.log"
+    log_path, ida_log_path = _startup_log_paths(session.socket_path)
 
     env = dict(os.environ)
     ida_dir = (
@@ -179,6 +213,7 @@ def start_background(
 
     # Build command to launch IDA with the plugin
     cmd = [str(ida_exe)]
+    cmd.append(f"-L{ida_log_path}")
     if session.mode == "headless":
         cmd.append("-A")
         # In headless mode the auto-loaded plugin returns PLUGIN_SKIP,
@@ -207,27 +242,23 @@ def start_background(
         cmd.extend(extra_ida_args)
 
     # If the IDB exists, open it; otherwise open the binary (IDA creates the IDB)
+    launch_idb = session.launch_project_idb or session.project_idb
     if session.project_idb.exists():
-        cmd.append(str(session.project_idb))
+        cmd.append(str(launch_idb))
     elif binary_path and binary_path.exists():
         # IDA creates the IDB next to the source binary by default.
         # If the binary is in a read-only directory (e.g. /usr/bin),
         # this fails silently. Force output path with -o.
-        cmd.append(f"-o{session.project_idb}")
+        cmd.append(f"-o{launch_idb}")
         cmd.append(str(binary_path))
-
-    # IDA 9.4 refuses autonomous/batch startup until its EULA has been
-    # acknowledged. Keep this after the input path, matching IDA's documented
-    # command-line form and the working Windows invocation.
-    if session.mode == "headless" and os.name == "nt":
-        cmd.append("--accept-eula")
 
     # The plugin auto-starts the server when loaded
     try:
-        with open(log_path, "a") as log_fh:
+        session_mod.save(session)
+        with open(log_path, "w", encoding="utf-8", newline="\n") as log_fh:
             log_fh.write("ida-rpc launch command: " + " ".join(cmd) + "\n")
             log_fh.flush()
-            subprocess.Popen(
+            proc = subprocess.Popen(
                 cmd,
                 stdout=log_fh,
                 stderr=log_fh,
@@ -238,17 +269,29 @@ def start_background(
         session_mod.remove(session.project_idb)
         raise
 
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    def raise_if_exited() -> None:
+        exit_code = proc.poll()
+        if exit_code is not None:
+            session_mod.remove(session.project_idb)
+            raise DaemonExitedError(
+                f"IDA exited before ida-rpc started (exit code {exit_code}). "
+                f"IDA log: {ida_log_path}; launch log: {log_path}. "
+                f"Recent IDA output:\n{_log_tail(ida_log_path) or _log_tail(log_path)}"
+            )
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         if is_running(session.socket_path):
             return
-        time.sleep(0.5)
+        raise_if_exited()
+        time.sleep(min(0.5, max(0.0, deadline - time.monotonic())))
 
-    session_mod.remove(session.project_idb)
+    raise_if_exited()
 
     raise TimeoutError(
-        f"Daemon did not start within {timeout}s. "
-        f"Check logs at {log_path}"
+        f"Daemon did not start within {timeout}s. IDA process {proc.pid} "
+        f"is still running. IDA log: {ida_log_path}; launch log: {log_path}. "
+        f"Recent IDA output:\n{_log_tail(ida_log_path) or _log_tail(log_path)}"
     )
 
 

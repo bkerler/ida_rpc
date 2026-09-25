@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import queue
 import select
 import socket
@@ -75,8 +76,12 @@ def _handle_connection(
         cmd = request.get("cmd", "")
         args = request.get("args", {})
 
-        if cmd == "ping":
-            response = {"id": req_id, "ok": True, "result": {"status": "alive"}}
+        session = getattr(ctx, "session", None)
+        project = str(session.project_idb.resolve()) if session is not None else None
+        if request.get("project") and project and request["project"] != project:
+            response = {"id": req_id, "ok": False, "error": "WrongProject", "message": "Endpoint belongs to a different IDA project"}
+        elif cmd == "ping":
+            response = {"id": req_id, "ok": True, "result": {"status": "alive", "project": project, "pid": os.getpid()}}
         elif cmd == "stop":
             response = {"id": req_id, "ok": True, "result": {"status": "stopping"}}
             conn.sendall((json.dumps(response) + "\n").encode())
@@ -146,7 +151,8 @@ def run_server(session: Session, ctx: Any, *, synchronous: bool = False) -> None
     register_all_tools()
 
     sock_path = session.socket_path
-    server_sock = create_server_socket(sock_path)
+    server_sock = create_server_socket(sock_path, project_idb=session.project_idb)
+    bound_port = server_sock.getsockname()[1] if isinstance(server_sock.getsockname(), tuple) else None
     server_sock.setblocking(False)
 
     shutdown_event = threading.Event()
@@ -222,7 +228,7 @@ def run_server(session: Session, ctx: Any, *, synchronous: bool = False) -> None
             _drain_queued_requests()
     finally:
         server_sock.close()
-        remove_endpoint_marker(sock_path)
+        remove_endpoint_marker(sock_path, expected_port=bound_port)
         # Session state describes a live daemon.  Do not leave a normal stop
         # looking like an active project to status/restart callers.
         remove_session(session.project_idb)
