@@ -38,5 +38,3 @@ Older installed builds may lack `debug-select-backend` and the `--backend` optio
 ## Runtime writes
 
 `debug-set-register` and `debug-write-memory` change live process state. Read the current value first, make the smallest requested change, read it back, and report the effect. These commands do not replace IDB patch commands.
-
-`debug-read-memory` reads the live process, while `read-bytes` reads the IDB. Do not substitute one for the other when runtime state matters. A SWIG `TypeError` mentioning `read_dbg_memory` and `void *` identifies an older handler that passed a Python buffer to IDA's low-level API; record it as a tool compatibility defect rather than retrying address variants. Upgrade or patch the tool only when maintenance is authorized.
