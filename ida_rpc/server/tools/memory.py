@@ -126,16 +126,28 @@ def _handle_read_string(ctx, args: dict) -> dict:
         strtype = int(strtype, 0)
     else:
         strtype = ida_nalt.get_str_type(addr)
-        if strtype == ida_idaapi.BADADDR:
+        # IDA 9.4 may return the 32-bit BADADDR sentinel from a 32-bit
+        # database even when ida_idaapi.BADADDR is wider.
+        if strtype == ida_idaapi.BADADDR or strtype < 0 or strtype == 0xFFFFFFFF:
             strtype = ida_nalt.STRTYPE_C
 
     # Ask IDA for the current item size first; some builds reject -1 here.
     item_size = ida_bytes.get_item_size(addr)
     if item_size <= 0:
-        item_size = 0
+        return {
+            "address": f"0x{addr:x}",
+            "text": None,
+            "bytes": None,
+            "length": 0,
+            "strtype": f"0x{strtype:x}",
+        }
 
-    # Try to get string contents
-    contents = ida_bytes.get_strlit_contents(addr, item_size, strtype)
+    # Some IDA builds return an invalid inferred type for ordinary data.
+    try:
+        contents = ida_bytes.get_strlit_contents(addr, item_size, strtype)
+    except TypeError:
+        strtype = ida_nalt.STRTYPE_C
+        contents = ida_bytes.get_strlit_contents(addr, item_size, strtype)
     if contents is None:
         return {
             "address": f"0x{addr:x}",

@@ -466,6 +466,43 @@ def _handle_set_thunk(ctx, args: dict) -> dict:
     return result
 
 
+def _handle_set_function_flags(ctx, args: dict) -> dict:
+    """Set or clear selected IDA function flags without changing the body."""
+    _, _, ida_funcs, _, ida_idaapi, _, _ = _ida()
+    target = args.get("target", "")
+    if not target:
+        raise ValueError("Missing required argument: target")
+    func_ea = ctx.find_function(target)
+    if ida_funcs.get_func_start(func_ea) == ida_idaapi.BADADDR:
+        raise ValueError(f"Function not found: {target}")
+
+    old_flags = ida_funcs.get_func_flags(func_ea)
+    clear_noreturn = bool(args.get("clear_noreturn", False))
+    set_noreturn = bool(args.get("set_noreturn", False))
+    if clear_noreturn and set_noreturn:
+        raise ValueError("clear_noreturn and set_noreturn are mutually exclusive")
+    noreturn = getattr(ida_funcs, "FUNC_NORET", 0x00000001)
+    new_flags = old_flags
+    if clear_noreturn:
+        new_flags &= ~noreturn
+    elif set_noreturn:
+        new_flags |= noreturn
+
+    def do_set():
+        ida_funcs.set_func_flags(func_ea, new_flags)
+        return {
+            "address": f"0x{func_ea:x}",
+            "name": ida_funcs.get_func_name(func_ea),
+            "old_flags": old_flags,
+            "new_flags": ida_funcs.get_func_flags(func_ea),
+            "noreturn": bool(ida_funcs.get_func_flags(func_ea) & noreturn),
+        }
+
+    result = ctx.run_on_main_thread(do_set)
+    ctx.save()
+    return result
+
+
 def _handle_set_calling_convention(ctx, args: dict) -> dict:
     _, _, ida_funcs, ida_typeinf, ida_idaapi, _, idc = _ida()
 
@@ -829,6 +866,7 @@ register_handler("set_data_type", _handle_set_data_type)
 register_handler("create_function", _handle_create_function)
 register_handler("delete_function", _handle_delete_function)
 register_handler("set_thunk", _handle_set_thunk)
+register_handler("set_function_flags", _handle_set_function_flags)
 register_handler("set_calling_convention", _handle_set_calling_convention)
 register_handler("batch_rename", _handle_batch_rename)
 register_handler("batch_set_comment", _handle_batch_set_comment)
