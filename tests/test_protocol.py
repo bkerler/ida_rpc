@@ -29,13 +29,15 @@ def _make_mock_context():
     return ctx
 
 
-def _send_request(sock_path: Path, cmd: str, args: dict | None = None) -> dict:
+def _send_request(sock_path: Path, cmd: str, args: dict | None = None, *, project: str | None = None) -> dict:
     """Send a raw JSON request and return parsed response."""
     request = {
         "id": str(uuid.uuid4()),
         "cmd": cmd,
         "args": args or {},
     }
+    if project is not None:
+        request["project"] = project
     address = endpoint_address(sock_path)
     family = socket.AF_UNIX if isinstance(address, str) else socket.AF_INET
     s = socket.socket(family, socket.SOCK_STREAM)
@@ -78,6 +80,7 @@ class TestProtocol:
         session = Session(mode="headless", project_idb=tmp_path / "test.i64", socket_path=self.sock_path)
 
         self.ctx = _make_mock_context()
+        self.ctx.session = session
         self.server_thread = threading.Thread(
             target=server_main.run_server,
             args=(session, self.ctx),
@@ -94,9 +97,17 @@ class TestProtocol:
         assert self.sock_path.exists(), "Server socket did not appear"
 
     def test_ping(self):
+        from ida_rpc.client import send_request
+
         resp = _send_request(self.sock_path, "ping")
         assert resp["ok"] is True
         assert resp["result"]["status"] == "alive"
+        assert send_request(self.sock_path, "ping")["result"]["project"] == str(self.ctx.session.project_idb.resolve())
+
+    def test_wrong_project_is_rejected(self):
+        resp = _send_request(self.sock_path, "echo", {"hello": "world"}, project="wrong.i64")
+        assert resp["ok"] is False
+        assert resp["error"] == "WrongProject"
 
     def test_echo_handler(self):
         resp = _send_request(self.sock_path, "echo", {"hello": "world"})

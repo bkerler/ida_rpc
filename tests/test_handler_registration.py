@@ -22,7 +22,7 @@ _EXPECTED_HANDLERS = {
     "rename_function", "rename_symbol", "create_label",
     "set_comment", "set_function_signature", "set_data_type",
     "create_function", "delete_function", "set_thunk",
-    "set_calling_convention", "batch_rename", "batch_set_comment", "batch",
+    "set_calling_convention", "set_function_flags", "batch_rename", "batch_set_comment", "batch",
     "create_instruction", "create_instructions", "undefine",
     # Memory
     "read_bytes", "write_bytes", "read_string", "create_string",

@@ -10,6 +10,8 @@ Exposes IDA Pro reverse engineering capabilities over a local socket for
 integration with LLM agents, automation pipelines, and multi-agent setups.
 Linux and macOS use Unix domain sockets; Windows uses loopback TCP because
 ``socket.AF_UNIX`` is not available in all supported Windows IDA/Python setups.
+On Windows, the daemon publishes its OS-assigned TCP port in the project endpoint
+marker, avoiding ports reserved by virtualization or other local software.
 
 ## Features
 
