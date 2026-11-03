@@ -10,7 +10,8 @@ Adapted from upstream [troubleshooting](https://github.com/bkerler/ida_rpc/blob/
 |---|---|
 | IDA executable not found | command resolution, `IDA_INSTALL_DIR`, `--ida-install-dir` |
 | `AlreadyRunning` | Reuse the responsive daemon or stop it normally |
-| `StartTimeout` | Read the exact daemon log path from the error; confirm IDA process and loader state |
+| `DaemonExitedError` | Read the reported exit code and exact IDA log path; fix the logged startup error before retrying |
+| `StartTimeout` | Read the exact IDA log path; check whether the reported IDA process is still importing, then retry `status` |
 | Stale endpoint | Run `status`; use normal `stop`; remove only the exact stale marker after verifying no process owns it |
 | `NoSession` on restart | Use a fresh `open`/`start` with explicit project and architecture |
 | GUI timeout warning | Wait briefly and retry `status`; GUI startup may exceed the initial poll window |

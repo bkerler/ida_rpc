@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 
 from ida_rpc import session as session_mod
-from ida_rpc.transport import endpoint_address
+from ida_rpc.transport import endpoint_address, endpoint_marker
 
 
 class DaemonNotRunning(Exception):
@@ -66,9 +66,14 @@ def send_request(
         "cmd": cmd,
         "args": args or {},
     }
+    try:
+        address = endpoint_address(socket_path)
+        marker = endpoint_marker(socket_path)
+    except (OSError, ValueError) as exc:
+        raise DaemonNotRunning(f"Invalid daemon endpoint marker {socket_path}: {exc}") from exc
+    if marker and marker.get("project"):
+        request["project"] = marker["project"]
     request_bytes = (json.dumps(request) + "\n").encode("utf-8")
-
-    address = endpoint_address(socket_path)
     family = socket.AF_UNIX if isinstance(address, str) else socket.AF_INET
     sock = socket.socket(family, socket.SOCK_STREAM)
     try:
@@ -145,13 +150,13 @@ def send_request_with_auto_restart(
 
     try:
         daemon_mod.start_background(session)
-    except Exception:
+    except Exception as exc:
         restart_cmd = f"ida-rpc start --project {project_idb}"
         if not Path(project_idb).exists():
             restart_cmd += " --arch <arch>"
         raise DaemonNotRunning(
-            f"Failed to restart daemon. Please run: {restart_cmd}"
-        )
+            f"Failed to restart daemon: {exc}. Please run: {restart_cmd}"
+        ) from exc
 
     return send_request(
         session.socket_path, cmd, args, socket_timeout=socket_timeout

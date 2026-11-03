@@ -43,6 +43,25 @@ ida-rpc start --project /path/to/binary.i64 --arch <arch> --headless
 The daemon normally cleans up its socket on shutdown, but if it's killed (SIGKILL, power
 loss), the socket file may remain.
 
+On Windows, the `.sock` path is a text marker containing the chosen loopback TCP
+port, not a Unix socket. Do not delete it while `ida-rpc status --project <idb>`
+reports a running daemon. New daemons choose a free port automatically; empty
+markers from older versions continue to use their deterministic port.
+
+## Windows Startup Failure
+
+An early IDA exit now reports its exit code, the `*.ida.log` and `*.launch.log`
+paths, and recent IDA output. Read the exact IDA log shown in the error first;
+it includes IDA loader errors and Python plugin tracebacks. Logs are written
+under `ida_rpc/logs` or, for read-only installs, the platform temporary
+`ida-rpc/logs` directory. A `StartTimeout` with a live process can mean IDA is
+still importing a large binary; check `status` before opening the project again.
+
+Older Windows releases derived a fixed TCP port from the project marker path.
+If that port falls in a Windows excluded range, `bind` can fail with WinError
+10013. Upgrade to a release with dynamic port publication rather than changing
+Windows networking services or repeatedly reopening the same path.
+
 ## Project Already Running
 
 **Symptom**: `ida-rpc start` fails with `AlreadyRunning`.

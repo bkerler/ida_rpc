@@ -20,12 +20,15 @@ class Session:
     socket_path: Path
     ida_install_dir: Path | None = None
     arch: str | None = None  # Processor arch passed at start (e.g. "arm", "thumb", "aarch64")
+    launch_project_idb: Path | None = None  # Preserve a caller-supplied path spelling for IDA.
 
     def __post_init__(self):
         self.project_idb = Path(self.project_idb)
         self.socket_path = Path(self.socket_path)
         if self.ida_install_dir is not None:
             self.ida_install_dir = Path(self.ida_install_dir)
+        if self.launch_project_idb is not None:
+            self.launch_project_idb = Path(self.launch_project_idb)
 
 
 def socket_path_for_project(idb: Path | str) -> Path:
@@ -55,6 +58,7 @@ def save(session: Session) -> None:
         "socket_path": str(session.socket_path),
         "ida_install_dir": str(session.ida_install_dir) if session.ida_install_dir else None,
         "arch": session.arch,
+        "launch_project_idb": str(session.launch_project_idb) if session.launch_project_idb else None,
     }
     content = json.dumps(data, indent=2, sort_keys=True) + "\n"
     try:
@@ -91,14 +95,16 @@ def load(idb: Path | str) -> Session | None:
     if not path.exists():
         return None
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
         ida_dir = data.get("ida_install_dir")
+        launch_idb = data.get("launch_project_idb")
         return Session(
             mode=data["mode"],
             project_idb=Path(data["project_idb"]),
             socket_path=Path(data["socket_path"]),
             ida_install_dir=Path(ida_dir) if ida_dir else None,
             arch=data.get("arch"),
+            launch_project_idb=Path(launch_idb) if launch_idb else None,
         )
     except (json.JSONDecodeError, KeyError):
         return None

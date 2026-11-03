@@ -7,7 +7,7 @@ Adapted from upstream [implementation internals](https://github.com/bkerler/ida_
 ## Architecture
 
 - The CLI sends one newline-delimited JSON request over a local endpoint and reads one response.
-- Linux and macOS normally use Unix domain sockets; Windows builds can use loopback TCP with a marker derived from the socket path.
+- Linux and macOS normally use Unix domain sockets; Windows uses loopback TCP with an OS-assigned port published in the project marker.
 - One daemon hosts one IDA process and one IDB.
 - Session JSON records the project, mode, endpoint, and optional IDA installation path so restart and auto-restart can reconstruct the daemon.
 
@@ -24,7 +24,7 @@ Consequences:
 
 ## Startup and persistence
 
-Detached startup saves session state, launches IDA, and polls the endpoint until responsive. GUI cold starts can take substantially longer than headless starts. Daemon logs are stored next to the endpoint or in the platform temporary directory; use the exact path returned by timeout errors.
+Detached startup saves session state, launches IDA with its `-L` log switch, and polls the endpoint until responsive or until IDA exits. GUI cold starts can take substantially longer than headless starts. Each launch writes separate IDA and launch logs under `ida_rpc/logs` or a temporary fallback directory; use the exact paths returned by startup errors.
 
 IDA saves directly to `.i64`/`.idb`. Mutation handlers normally call the save routine after committing. A crash can still lose an in-flight change, so verify and save logical batches.
 
