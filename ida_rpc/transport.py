@@ -4,7 +4,8 @@
 Unix domain sockets are the preferred transport on POSIX systems.  Windows
 Python installations do not consistently provide ``socket.AF_UNIX`` (and
 older supported IDA/Python combinations do not provide it at all), so use a
-loopback TCP socket there.  The endpoint marker keeps the existing lifecycle
+loopback TCP socket there.  ``IDA_RPC_TRANSPORT=tcp`` also selects it on POSIX.
+The endpoint marker keeps the existing lifecycle
 and discovery behavior, which expects a deterministic ``*.sock`` path.
 """
 
@@ -23,7 +24,7 @@ _TCP_PORT_COUNT = 16384
 
 def uses_unix_sockets() -> bool:
     """Return whether the current platform should use Unix sockets."""
-    return os.name != "nt" and hasattr(socket, "AF_UNIX")
+    return os.environ.get("IDA_RPC_TRANSPORT") != "tcp" and os.name != "nt" and hasattr(socket, "AF_UNIX")
 
 
 def endpoint_address(socket_path: Path) -> str | tuple[str, int]:
@@ -39,6 +40,8 @@ def create_server_socket(socket_path: Path) -> socket.socket:
     """Create, bind, and listen on the platform's local RPC endpoint."""
     socket_path = Path(socket_path)
     if socket_path.exists():
+        if not uses_unix_sockets() and socket_path.is_socket():
+            raise RuntimeError(f"Unix daemon already owns {socket_path}; stop it before switching to TCP")
         socket_path.unlink()
 
     if uses_unix_sockets():

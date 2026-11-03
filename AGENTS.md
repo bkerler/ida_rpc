@@ -37,7 +37,8 @@ All automation commands print human-readable text to stdout by default. Pass
 `{"ok": false, ...}` (JSON mode) or `Error: <error>: <message>` (human mode) as
 a recoverable tool error. Set `IDA_RPC_DEBUG=1` only when a traceback is needed.
 
-RPC queries should always be run outside the sandbox.
+Run Unix-socket RPC queries outside the sandbox. For a session started with
+`ida-rpc-codex`, the TCP transport works inside its loopback-enabled sandbox.
 
 ## Project Overview
 

@@ -15,7 +15,8 @@ Direct, structured access to IDA Pro's analysis engine without GUI interaction. 
 - You are working in an **automation pipeline** or **multi-agent system**.
 
 ## What this skill requires
-- RPC queries should always be run outside the sandbox.
+- Run Unix-socket RPC queries outside the sandbox. `ida-rpc-codex` starts a
+  loopback TCP session whose RPC commands can run inside the sandbox.
 
 ## Quick Start Workflow
 

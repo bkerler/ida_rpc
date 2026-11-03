@@ -23,6 +23,7 @@ keywords = [
 [project.scripts]
 ida-rpc = "ida_rpc.cli:main"
 ida-rpcd = "ida_rpc.daemon:main"
+ida-rpc-codex = "ida_rpc.codex:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -116,6 +116,9 @@ def start_background(
     """
     from ida_rpc import session as session_mod
 
+    if os.environ.get("IDA_RPC_TRANSPORT") == "tcp" and session.socket_path.is_socket():
+        raise RuntimeError(f"Unix daemon already owns {session.socket_path}; stop it before switching to TCP")
+
     session_mod.save(session)
 
     socket_stem = session.socket_path.stem

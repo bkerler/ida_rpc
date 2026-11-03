@@ -10,6 +10,20 @@ Exposes IDA Pro reverse engineering capabilities over a local socket for
 integration with LLM agents, automation pipelines, and multi-agent setups.
 Linux and macOS use Unix domain sockets; Windows uses loopback TCP because
 ``socket.AF_UNIX`` is not available in all supported Windows IDA/Python setups.
+Set `IDA_RPC_TRANSPORT=tcp` to use loopback TCP on Linux or macOS.
+
+### Codex sandbox setup
+
+Install this package with `pip install -e .`, then run `ida-rpc-codex` from
+the project directory to start a new Codex session. The launcher selects TCP,
+permits only `127.0.0.1` command networking, and lets IDA write its user
+directory (`$IDAUSR` or `~/.idapro`) in the workspace-write sandbox.
+Run `ida-rpc` commands normally in that session. To pass Codex options, append
+them to `ida-rpc-codex`.
+
+Stop any existing Unix-socket daemon for an IDB before opening that IDB in the
+TCP session. The transport refuses to replace its live socket. Sessions that
+use the default Unix transport still need outside-sandbox execution.
 
 ## Features
 
