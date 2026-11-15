@@ -34,6 +34,19 @@ def function_flags(ida_funcs, ea: int) -> int:
     return int(func.flags) if func is not None else 0
 
 
+def get_function(ida_funcs, ea: int):
+    """Return the func_t containing an EA on IDA SDKs that still expose it.
+
+    IDA 9.4 removed the func_t getters; prefer the ea-based APIs there
+    (get_func_start, get_func_entry_info, get_func_tails, ...). This helper
+    only exists for the legacy fallback paths.
+    """
+    get_func = getattr(ida_funcs, "get_func", None)
+    if get_func is not None:
+        return get_func(ea)
+    return None
+
+
 def set_function_flags(ida_funcs, ea: int, flags: int) -> bool:
     """Write function flags across IDA SDKs."""
     set_func_flags = getattr(ida_funcs, "set_func_flags", None)

@@ -8,6 +8,7 @@ from ida_rpc.server.tools.func_compat import (
     function_flags,
     function_size,
     function_start,
+    get_function,
 )
 from ida_rpc.server.tools.hexrays_compat import decompile_function
 
@@ -49,12 +50,11 @@ def _func_flags_to_list(flags: int) -> list[str]:
 
 
 def _iter_function_tails(ida_funcs, func):
-    # IDA 9.3 removed get_func_tails() in favor of the tail iterator.
     # Accept either an EA or func_t because callers naturally have the EA,
-    # while the legacy API expects func_t.
-    if isinstance(func, int):
-        func = ida_funcs.get_func(func)
-    if func is None:
+    # while the legacy APIs expect func_t. IDA 9.4+ queries tails by EA
+    # (get_func_tails(rangevec_t, ea_t)); older SDKs need a func_t.
+    ea = func if isinstance(func, int) else getattr(func, "start_ea", None)
+    if ea is None:
         return
 
     get_func_tails = getattr(ida_funcs, "get_func_tails", None)
@@ -62,15 +62,25 @@ def _iter_function_tails(ida_funcs, func):
         import ida_range
 
         tails = ida_range.rangevec_t()
-        if get_func_tails(tails, func):
+        if getattr(ida_funcs, "get_func_start", None) is not None:
+            # IDA 9.4+: tail iterator is EA-based.
+            ok = get_func_tails(tails, ea)
+        else:
+            # IDA <= 9.3: tail iterator expects a func_t.
+            pfn = get_function(ida_funcs, ea)
+            ok = pfn is not None and get_func_tails(tails, pfn)
+        if ok:
             yield from tails
         return
 
     iterator_type = getattr(ida_funcs, "func_tail_iterator_t", None)
     if iterator_type is None:
         return
-    for chunk in iterator_type(func):
-        if chunk.start_ea != func.start_ea:
+    pfn = ea if not isinstance(func, int) else get_function(ida_funcs, ea)
+    if pfn is None:
+        return
+    for chunk in iterator_type(pfn):
+        if chunk.start_ea != ea:
             yield chunk
 
 

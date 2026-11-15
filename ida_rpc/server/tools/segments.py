@@ -71,47 +71,58 @@ def _handle_add_segment(ctx, args: dict) -> dict:
     if end <= start:
         raise ValueError("end must be greater than start")
 
+    # Resolve bitness up front so the segment is created with the right
+    # addressing mode from the start.
+    arch = getattr(ctx.session, "arch", None)
+    arch_lower = (arch or "").lower().strip()
+    bitness_map = {
+        "aarch64": 2, "arm64": 2, "armv8": 2, "armv8-a": 2,
+        "x64": 2, "x86_64": 2, "x86-64": 2, "amd64": 2,
+        "mips64": 2, "mips64el": 2, "mips64eb": 2,
+        "ppc64": 2, "powerpc64": 2, "riscv64": 2,
+        "arm": 1, "armv7": 1, "armv7-a": 1, "armv7-m": 1, "armv7m": 1,
+        "thumb": 1, "thumb2": 1, "metapc": 1, "x86": 1,
+        "i386": 1, "i486": 1, "i586": 1, "i686": 1,
+        "mips": 1, "mipsel": 1, "mipsb": 1, "mipseb": 1,
+        "ppc": 1, "powerpc": 1, "riscv": 1, "risc-v": 1, "riscv32": 1,
+    }
+    bitness = bitness_map.get(arch_lower, 1)
+
     def do_add():
         # Check for overlap
         if ida_segment.get_segment_ea(start) != ida_idaapi.BADADDR:
             raise ValueError(f"A segment already exists at 0x{start:x}")
 
-        success = ida_segment.add_segm(align, start, end, name or f"seg_{start:x}", sclass, flags)
+        # Build the segment explicitly instead of using the legacy
+        # add_segm(para, ...) wrapper. Its first argument is the segment
+        # *base paragraph* (base = para << 4), not an alignment constant;
+        # passing an alignment there produced a base above the segment start
+        # and made every add at a low address (e.g. 0x0) fail.
+        seg = ida_segment.segment_t()
+        seg.start_ea = start
+        seg.end_ea = end
+        seg.align = align
+        seg.bitness = bitness
+        seg.sel = ida_segment.setup_selector(start >> 4)
+        success = ida_segment.add_segm_ex(seg, name or f"seg_{start:x}", sclass, flags)
         if not success:
             raise RuntimeError(f"Failed to add segment 0x{start:x}-0x{end:x}")
 
-        seg = ida_segment.segment_info_t()
-        if not ida_segment.get_segment_info(seg, start, ida_segment.GSI_ALL):
+        created = get_segment(ida_segment, start)
+        if created is None:
             raise RuntimeError(f"Created segment for 0x{start:x}, but IDA did not return it")
 
-        # Auto-configure bitness and permissions based on arch
-        arch = getattr(ctx.session, "arch", None)
-        if arch:
-            arch_lower = arch.lower().strip()
-            bitness_map = {
-                "aarch64": 2, "arm64": 2, "armv8": 2, "armv8-a": 2,
-                "x64": 2, "x86_64": 2, "x86-64": 2, "amd64": 2,
-                "mips64": 2, "mips64el": 2, "mips64eb": 2,
-                "ppc64": 2, "powerpc64": 2, "riscv64": 2,
-                "arm": 1, "armv7": 1, "armv7-a": 1, "armv7-m": 1, "armv7m": 1,
-                "thumb": 1, "thumb2": 1, "metapc": 1, "x86": 1,
-                "i386": 1, "i486": 1, "i586": 1, "i686": 1,
-                "mips": 1, "mipsel": 1, "mipsb": 1, "mipseb": 1,
-                "ppc": 1, "powerpc": 1, "riscv": 1, "risc-v": 1, "riscv32": 1,
-            }
-            bitness = bitness_map.get(arch_lower, 1)
-            ida_segment.set_segment_addressing(start, bitness)
-            # Set read + execute for code segments
-            perm = ida_segment.SEGPERM_READ | ida_segment.SEGPERM_EXEC
-            seg.set_perm(perm)
-            if not ida_segment.set_segment_info(seg):
-                raise RuntimeError(f"Failed to set permissions for segment at 0x{start:x}")
+        # Set read + execute permissions (default for a code-friendly segment)
+        perm = ida_segment.SEGPERM_READ | ida_segment.SEGPERM_EXEC
+        created.set_perm(perm)
+        if not ida_segment.set_segment_info(created):
+            raise RuntimeError(f"Failed to set permissions for segment at 0x{start:x}")
 
         return {
-            "name": seg.get_name() or "",
-            "start": f"0x{seg.start_ea:x}",
-            "end": f"0x{seg.end_ea - 1:x}",
-            "size": seg.size(),
+            "name": segment_name(ida_segment, created),
+            "start": f"0x{created.start_ea:x}",
+            "end": f"0x{created.end_ea - 1:x}",
+            "size": created.end_ea - created.start_ea,
             "class": sclass,
         }
 
@@ -249,6 +260,7 @@ def _handle_list_segments(ctx, args: dict) -> dict:
 
 
 register_handler("add_segment", _handle_add_segment)
+
 register_handler("edit_segment", _handle_edit_segment)
 register_handler("delete_segment", _handle_delete_segment)
 register_handler("list_segments", _handle_list_segments)
